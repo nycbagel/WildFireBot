@@ -1,0 +1,3 @@
+latitude,longitude,path,row,track,scan,acquire_time,satellite,confidence,version,daynight
+38.7000,-122.8000,44,33,100,200,2026-11-19 19:05:00,L8,H,1.0.7 NRT,D
+38.7100,-122.8100,44,33,101,201,2026-11-19 19:05:00,L9,L,1.0.7 URT,D

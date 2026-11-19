@@ -1,0 +1,17 @@
+{
+  "meta": {"name": "openaq-api", "found": 1},
+  "results": [
+    {
+      "id": 1001,
+      "name": "Berkeley Aquatic Park",
+      "coordinates": {"latitude": 37.8642, "longitude": -122.3130},
+      "sensors": [
+        {
+          "id": 501,
+          "name": "pm25 µg/m³",
+          "parameter": {"id": 2, "name": "pm25", "units": "µg/m³", "displayName": "PM2.5"}
+        }
+      ]
+    }
+  ]
+}
