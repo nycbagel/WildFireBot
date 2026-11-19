@@ -1,0 +1,25 @@
+[
+  {
+    "Latitude": 37.79,
+    "Longitude": -122.28,
+    "UTC": "2026-11-19T20:00",
+    "Parameter": "PM2.5",
+    "Unit": "UG/M3",
+    "Value": 18.4,
+    "RawConcentration": 18.4,
+    "AQI": 64,
+    "Category": 2,
+    "SiteName": "Oakland West"
+  },
+  {
+    "Latitude": 37.81,
+    "Longitude": -122.42,
+    "UTC": "2026-11-19T20:00",
+    "Parameter": "PM2.5",
+    "Unit": "UG/M3",
+    "Value": 9.0,
+    "AQI": 50,
+    "Category": 1,
+    "SiteName": "San Francisco"
+  }
+]
