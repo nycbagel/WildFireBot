@@ -1,8 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from tests.support import ScriptedTransport
 
+from tests.support import ScriptedTransport
 from wildfirebot.http import FileCache, HttpClient, HttpError, TransportError, redact_url
 
 NOW = datetime(2026, 11, 19, 20, tzinfo=UTC)

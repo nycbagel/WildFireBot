@@ -2,8 +2,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from tests.support import ScriptedTransport
 
+from tests.support import ScriptedTransport
 from wildfirebot.geo import BBox
 from wildfirebot.http import HttpClient
 from wildfirebot.sources.base import TimeRange
