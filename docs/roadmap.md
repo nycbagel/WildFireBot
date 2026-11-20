@@ -28,6 +28,7 @@ Done in this tree.
 The MCP server is done. `wildfirebot-mcp` speaks stdio by default and streamable HTTP with `--http`. It exposes the same handlers as the CLI:
 
 - `forecast_smoke` for a lat/lon and an hour window, including degraded-mode notices.
+- `forecast_smoke_aqi` for the Gaussian plume PM2.5 and EPA AQI horizons.
 - `pm25_to_aqi` for the breakpoint conversion.
 - A later `predict_pm25` tool once milestone 2 has a model worth calling.
 

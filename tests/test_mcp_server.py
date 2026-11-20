@@ -30,7 +30,7 @@ def test_mcp_initialize_list_and_call_tools(monkeypatch):
                 assert initialized.server_info.name == "wildfirebot"
                 listed = await session.list_tools()
                 by_name = {tool.name: tool for tool in listed.tools}
-                assert set(by_name) == {"forecast_smoke", "pm25_to_aqi"}
+                assert set(by_name) == {"forecast_smoke", "forecast_smoke_aqi", "pm25_to_aqi"}
                 hours = by_name["forecast_smoke"].input_schema["properties"]["hours"]
                 assert hours["default"] == 48
                 assert "relative exposure index" in (by_name["forecast_smoke"].description or "")

@@ -27,6 +27,16 @@ FORECAST_DESCRIPTION = (
     "A missing key is named in notices; the server keeps running."
 )
 
+AQI_FORECAST_DESCRIPTION = (
+    "Forecast PM2.5 and the US EPA AQI at one latitude and longitude. "
+    "Adds a Gaussian plume from each NASA FIRMS fire cluster, using fire radiative "
+    "power and the Open-Meteo wind forecast, on top of Open-Meteo's background PM2.5. "
+    "Works for a new fire because it does not need a history of observations. "
+    "Returns horizons, degraded-mode notices, and a disclaimer. "
+    "This is a screening estimate, not an official AQI and not a health advisory. "
+    "Missing FIRMS_MAP_KEY, AIRNOW_API_KEY, or OPENAQ_API_KEY is reported in notices."
+)
+
 PM25_DESCRIPTION = (
     "Convert one PM2.5 concentration in micrograms per cubic meter to the US EPA 2024 "
     "AQI with the breakpoint equation. Does not compute a 24-hour average or a NowCast. "
@@ -75,6 +85,52 @@ def build_server() -> MCPServer:
                     "radius_km": radius_km,
                     "days": days,
                     "lookback_hours": lookback_hours,
+                },
+                runtime_from_env(),
+            )
+        except ValueError as exc:
+            return {
+                "degraded": True,
+                "notices": [str(exc)],
+                "disclaimer": DISCLAIMER,
+                "latitude": lat,
+                "longitude": lon,
+            }
+
+    @server.tool(name="forecast_smoke_aqi", description=AQI_FORECAST_DESCRIPTION)
+    def forecast_smoke_aqi(
+        lat: Annotated[float, Field(description="Target latitude in decimal degrees (-90 to 90)")],
+        lon: Annotated[
+            float, Field(description="Target longitude in decimal degrees (-180 to 180)")
+        ],
+        radius_km: Annotated[
+            float, Field(description="Fire search radius in kilometers", gt=0, le=2000)
+        ] = 150,
+        days: Annotated[
+            int, Field(description="Days of FIRMS detections to read", ge=1, le=10)
+        ] = 1,
+        stability: Annotated[
+            str, Field(description="Pasquill-Gifford stability class A through F")
+        ] = "D",
+        plume_height_m: Annotated[
+            float, Field(description="Assumed plume height in meters", gt=0)
+        ] = 200,
+        emission_factor: Annotated[
+            float, Field(description="PM2.5 emission in grams per second per MW of FRP", gt=0)
+        ] = 5.5,
+    ) -> dict[str, Any]:
+        """Gaussian plume PM2.5 and AQI. Not a health advisory."""
+        try:
+            return call_tool(
+                "forecast_smoke_aqi",
+                {
+                    "lat": lat,
+                    "lon": lon,
+                    "radius_km": radius_km,
+                    "days": days,
+                    "stability": stability,
+                    "plume_height_m": plume_height_m,
+                    "emission_factor": emission_factor,
                 },
                 runtime_from_env(),
             )

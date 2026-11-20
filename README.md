@@ -153,4 +153,4 @@ To host it at a URL, use streamable HTTP. The MCP endpoint is `http://127.0.0.1:
 uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp -- --http --port 8000
 ```
 
-`--host` defaults to `127.0.0.1`. The tools are `forecast_smoke` (`lat`, `lon`, `hours` default 48, `radius_km` default 250, `days` default 2, `lookback_hours` default 12) and `pm25_to_aqi` (`concentration`).
+`--host` defaults to `127.0.0.1`. The tools are `forecast_smoke` (`lat`, `lon`, `hours` default 48, `radius_km` default 250, `days` default 2, `lookback_hours` default 12), `forecast_smoke_aqi` (Gaussian plume PM2.5 and EPA AQI), and `pm25_to_aqi` (`concentration`).

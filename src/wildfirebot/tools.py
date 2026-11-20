@@ -236,18 +236,7 @@ def forecast_smoke(arguments: dict, runtime: Runtime | None = None) -> dict:
     if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
         raise ValueError("latitude must be between -90 and 90 and longitude between -180 and 180")
     active = runtime or build_runtime(cluster_km=float(arguments.get("cluster_km", 3)))
-    now = arguments.get("now")
-    if now is None:
-        now = os.environ.get("WILDFIREBOT_NOW", "").strip() or None
-    if isinstance(now, str):
-        parsed = datetime.fromisoformat(now.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        moment = parsed.astimezone(UTC)
-    elif isinstance(now, datetime):
-        moment = now if now.tzinfo else now.replace(tzinfo=UTC)
-    else:
-        moment = datetime.now(UTC)
+    moment = _moment(arguments.get("now"))
     report = build_report(
         latitude=latitude,
         longitude=longitude,
@@ -412,6 +401,8 @@ def aqi_report_to_dict(report: AqiForecastReport) -> dict:
 
 
 def _moment(now: object) -> datetime:
+    if now is None:
+        now = os.environ.get("WILDFIREBOT_NOW", "").strip() or None
     if isinstance(now, str):
         parsed = datetime.fromisoformat(now.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
