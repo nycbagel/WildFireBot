@@ -68,7 +68,7 @@ def test_airnow_hourly_and_current_fallback(tmp_path):
 
     transport = ScriptedTransport()
     transport.when("/aq/data/", 503, "down")
-    transport.when("latLong/current", 200, current)
+    transport.when("current/ziplatlong", 200, current)
     result = AirNowClient("air-key", _http(transport)).fetch(BOX, WINDOW)
     assert result.degraded is True
     assert result.sources_used == ["airnow"]

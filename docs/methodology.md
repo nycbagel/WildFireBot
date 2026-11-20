@@ -10,7 +10,7 @@ NASA FIRMS area API, `west,south,east,north`, one to five days per call:
 
 Default order is VIIRS NOAA-21, VIIRS NOAA-20, VIIRS S-NPP, MODIS, then Landsat, all NRT. NRT products already include real-time and ultra-real-time rows. The `version` field carries the processing level (`URT`, `RT`, `NRT`, or standard processing). URT rows are removed upstream once the matching NRT detection arrives, or after about six hours. Landsat NRT covers the US and Canada and has no FRP.
 
-Open-Meteo supplies hourly wind speed and direction at 10 m and at 850 hPa, plus boundary-layer height, in m/s and UTC. AirNow supplies PM2.5 for the box, with the current lat/lon observation as a fallback. OpenAQ v3 supplies PM2.5 (`parameters_id=2`) for the closest locations in the box.
+Open-Meteo supplies hourly wind speed and direction at 10 m and at 850 hPa, plus boundary-layer height, in m/s and UTC. AirNow supplies PM2.5 for the box (`/aq/data/`), with the current observation from `/aq/observation/current/ziplatlong/` as a fallback. The older `/aq/observation/latLong/current/` service was retired on October 1, 2026 and returns 410. The new one sends camelCase fields, a NowCast AQI without a concentration, and no site coordinates, so those rows take the request point and are labeled as a reported AQI. Open-Meteo's air-quality API supplies the hourly background PM2.5 forecast for the plume AQI. OpenAQ v3 supplies PM2.5 (`parameters_id=2`) for the closest locations in the box.
 
 Every client implements `fetch(bbox, time_range) -> SourceResult`.
 
@@ -31,6 +31,20 @@ Boundary-layer factor is `min(4, 800 / max(height_m, 200))`. A missing height us
 A 100 MW cluster on the trajectory, under an 800 m boundary layer, detected at that hour, scores about 1. Labels on the score (`little expected smoke`, `light`, `moderate`, `heavy`) are a reading aid. They are not EPA categories.
 
 Wind gaps of up to 3 hours are filled in vector components, so 350° and 10° meet near north. Longer gaps stay missing and those hours have no score. If 10 m wind is still missing and 850 hPa wind exists, transport uses 850 hPa and the hour is marked.
+
+## Plume AQI forecast
+
+`forecast_smoke_aqi` (CLI: `aqi-smoke aqi`) estimates a concentration instead of a relative score. For each horizon (default 0, 6, 12, 24, 48 h) it takes the forecast wind nearest that hour (within 3 h) and sums a steady-state Gaussian plume from every fire cluster:
+
+C = Q / (π u σy σz) · exp(−y² / 2σy²) · exp(−H² / 2σz²)
+
+- Emission Q = 5.5 g/s of PM2.5 per MW of FRP (about 0.368 kg burned per MJ times 15 g PM2.5 per kg). Tunable with `emission_factor`. FRP is clipped at 3000 MW per cluster.
+- σy, σz are Pasquill-Gifford (Briggs open-country) widths. Stability class D by default.
+- Effective plume height H = 200 m. Distances under 1 km and winds under 1 m/s are clamped.
+- A cluster counts only if the target is within 60° of the plume axis and the smoke can arrive in time: distance / wind speed ≤ horizon. At +0 h no new smoke has arrived yet.
+- Fire PM2.5 is capped at 500 µg/m³. It is added to the Open-Meteo background (or the nearest monitor's PM2.5, or 8 µg/m³ as a last resort, all labeled), then converted with the EPA breakpoints below.
+
+Gaussian plumes are narrow. A fire 10° off the wind axis at 45 km can add almost nothing, so small wind-direction errors matter a lot. Treat the result as a screening estimate. Once a fire has burned for a day or two and monitors see its smoke, a trained model (milestone 2) should take over.
 
 ## Monitors
 

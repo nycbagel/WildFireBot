@@ -19,6 +19,8 @@ The repository was renamed to WildFireBot and had no code yet. This tree is the 
 
 The score is a relative index. A value near 1 is roughly a 100 MW cluster sitting on the upwind path under an 800 m boundary layer. It is not micrograms per cubic meter, not a regulatory AQI, and not a health advisory. Use AirNow, local smoke outlooks, and public-health guidance for decisions about going outside.
 
+`aqi-smoke aqi --lat 37.8 --lon -122.3` gives an estimated PM2.5 and EPA AQI at +0, 6, 12, 24, and 48 hours. It adds a Gaussian smoke plume from each fire cluster (emission from FRP, carried by the forecast wind) to Open-Meteo's background PM2.5 forecast. It needs no history, so it works for a fire that started an hour ago. It is a screening estimate, not a regulatory AQI. Add `--json` for the same output the `forecast_smoke_aqi` tool returns.
+
 If a feed is down, the command still prints what it has and labels the gap. Missing API keys, a failed satellite, a stale cache, and hours with no wind show up under `DEGRADED MODE` instead of a traceback or a fake zero.
 
 ## How we built it (tech stack)
@@ -27,11 +29,12 @@ Python 3.11+ package `wildfirebot`, installable with `pyproject.toml`. Console s
 
 The package is split the way later milestones need it:
 
-- `sources/` — FIRMS, Open-Meteo, AirNow, OpenAQ. Each one implements `fetch(bbox, time_range) -> SourceResult`.
+- `sources/` — FIRMS, Open-Meteo (wind and background PM2.5), AirNow, OpenAQ. Each one implements `fetch(bbox, time_range) -> SourceResult`.
 - `fires/` — drop low-confidence and invalid hotspots, then cluster the rest by distance and FRP.
 - `transport/` — fill short wind gaps, walk a back-trajectory, compute the score.
-- `model/` — the EPA PM2.5-to-AQI conversion. The trained model is still a stub.
-- `tools.py` and `mcp.py` — JSON tool handlers (`forecast_smoke`, `pm25_to_aqi`). The CLI uses the same forecast function. Milestone 3 is an MCP server over these handlers, not a second copy of the science.
+- `model/` — the EPA PM2.5-to-AQI conversion and the Gaussian plume (`model/plume.py`). The trained model is still a stub.
+- `aqi_forecast.py` — background PM2.5 plus plume smoke per horizon, converted to AQI.
+- `tools.py` and `mcp.py` — JSON tool handlers (`forecast_smoke`, `forecast_smoke_aqi`, `pm25_to_aqi`). The CLI uses the same forecast function. Milestone 3 is an MCP server over these handlers, not a second copy of the science.
 
 Data sources, and the terms they ask users to keep:
 
@@ -95,6 +98,7 @@ The CLI reads `.env` without overriding variables that are already set.
 
 ```bash
 aqi-smoke forecast --lat 37.8 --lon -122.3 --hours 48
+aqi-smoke aqi --lat 37.8 --lon -122.3            # plume AQI forecast, add --json for tool output
 ```
 
 `wildfirebot forecast` is the same command. The default is live data. With only Open-Meteo reachable you still get the wind summary, and `DEGRADED MODE` names the fire and monitor feeds that were skipped. Responses are cached under `~/.cache/wildfirebot`. `--refresh` skips a fresh cache. A stale cache is used only when the live feed fails, and the age is printed.
