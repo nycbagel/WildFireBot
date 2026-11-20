@@ -1,0 +1,9 @@
+[
+  {
+    "ReportingArea": "Oakland",
+    "ParameterName": "PM2.5",
+    "Concentration": 8.4,
+    "AQI": 46,
+    "Category": {"Number": 1, "Name": "Good"}
+  }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "dateForecast": "2026-11-19",
+    "reportingArea": "Oakland",
+    "parameterName": "PM2.5",
+    "aqi": 55,
+    "aqiCategoryName": "Moderate"
+  },
+  {
+    "dateForecast": "2026-11-19",
+    "reportingArea": "Oakland",
+    "parameterName": "O3",
+    "aqi": 40,
+    "aqiCategoryName": "Good"
+  }
+]

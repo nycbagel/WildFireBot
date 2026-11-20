@@ -1,0 +1,11 @@
+# Secrets. Never commit a filled-in .env. This repository is public.
+.env
+!.env.example
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+*.egg-info/

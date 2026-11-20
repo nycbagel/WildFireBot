@@ -1,0 +1,20 @@
+[
+  {
+    "dateObserved": "2026-11-19",
+    "hourObserved": "14:00",
+    "localTimeZone": "PST",
+    "reportingAreaName": "Oakland",
+    "parameterName": "O3",
+    "nowcastAQI": 28,
+    "aqiCategoryName": "Good"
+  },
+  {
+    "dateObserved": "2026-11-19",
+    "hourObserved": "14:00",
+    "localTimeZone": "PST",
+    "reportingAreaName": "Oakland",
+    "parameterName": "PM2.5",
+    "nowcastAQI": 42,
+    "aqiCategoryName": "Good"
+  }
+]

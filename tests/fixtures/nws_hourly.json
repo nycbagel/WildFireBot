@@ -1,0 +1,24 @@
+{
+  "properties": {
+    "periods": [
+      {
+        "startTime": "2026-11-19T12:00:00+00:00",
+        "endTime": "2026-11-19T13:00:00+00:00",
+        "windSpeed": "10 mph",
+        "windDirection": "W"
+      },
+      {
+        "startTime": "2026-11-19T13:00:00+00:00",
+        "endTime": "2026-11-19T14:00:00+00:00",
+        "windSpeed": "5 to 15 mph",
+        "windDirection": "SW"
+      },
+      {
+        "startTime": "2026-11-19T14:00:00+00:00",
+        "endTime": "2026-11-19T15:00:00+00:00",
+        "windSpeed": "Calm",
+        "windDirection": "N"
+      }
+    ]
+  }
+}
