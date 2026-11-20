@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from datetime import UTC, datetime
@@ -11,14 +12,17 @@ from pathlib import Path
 from wildfirebot import __version__
 from wildfirebot.fires.cluster import Cluster
 from wildfirebot.geo import compass_point, haversine_km, initial_bearing
+from wildfirebot.model.plume import DEFAULT_HORIZONS, STABILITY_CLASSES
 from wildfirebot.pipeline import ForecastReport, HourScore, build_report
 from wildfirebot.sources.firms import DEFAULT_SOURCES, parse_sources
-from wildfirebot.tools import build_runtime
+from wildfirebot.tools import build_runtime, forecast_smoke_aqi
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.command == "aqi":
+        return _run_aqi(args)
     if args.command != "forecast":
         parser.print_help()
         return 2
@@ -143,7 +147,112 @@ def _parser() -> argparse.ArgumentParser:
             "instead of live feeds. Omit it to use live APIs."
         ),
     )
+    _add_aqi_parser(sub)
     return parser
+
+
+def _add_aqi_parser(sub) -> None:
+    aqi = sub.add_parser(
+        "aqi",
+        help="Forecast PM2.5 and AQI with a Gaussian smoke plume from each fire cluster",
+    )
+    aqi.add_argument("--lat", type=float, required=True, help="Target latitude")
+    aqi.add_argument("--lon", type=float, required=True, help="Target longitude")
+    aqi.add_argument(
+        "--radius-km", type=float, default=150, help="Fire search radius (default 150)"
+    )
+    aqi.add_argument(
+        "--horizons",
+        default=",".join(str(hour) for hour in DEFAULT_HORIZONS),
+        help="Comma-separated forecast horizons in hours (default 0,6,12,24,48)",
+    )
+    aqi.add_argument("--days", type=int, default=1, help="Days of FIRMS detections (default 1)")
+    aqi.add_argument("--cluster-km", type=float, default=3, help="Hotspot clustering radius")
+    aqi.add_argument(
+        "--stability", default="D", choices=list(STABILITY_CLASSES), help="Pasquill-Gifford class"
+    )
+    aqi.add_argument("--plume-height-m", type=float, default=200, help="Effective plume height")
+    aqi.add_argument("--emission-factor", type=float, default=5.5, help="PM2.5 g/s per MW of FRP")
+    aqi.add_argument("--json", action="store_true", help="Print the tool's JSON output")
+    aqi.add_argument("--cache-dir", default=None, help="Response cache directory")
+    aqi.add_argument(
+        "--refresh", action="store_true", help="Ignore fresh cache and request live data"
+    )
+    aqi.add_argument("--env-file", default=".env", help="Optional dotenv path")
+    aqi.add_argument("--now", default=None, help="ISO-8601 clock override")
+    aqi.add_argument(
+        "--fixture-dir", default=None, help="Developer and test switch: recorded responses"
+    )
+
+
+def _run_aqi(args: argparse.Namespace) -> int:
+    try:
+        horizons = [int(part) for part in args.horizons.split(",") if part.strip()]
+        if not 1 <= args.days <= 10:
+            raise ValueError("--days must be between 1 and 10")
+        now = _parse_time(args.now) if args.now else datetime.now(UTC)
+        load_dotenv(Path(args.env_file))
+        runtime = build_runtime(
+            cluster_km=args.cluster_km,
+            refresh=args.refresh,
+            cache_dir=Path(args.cache_dir) if args.cache_dir else None,
+            fixture_dir=Path(args.fixture_dir) if args.fixture_dir else None,
+            now=now,
+        )
+        result = forecast_smoke_aqi(
+            {
+                "lat": args.lat,
+                "lon": args.lon,
+                "radius_km": args.radius_km,
+                "horizons": horizons,
+                "days": args.days,
+                "cluster_km": args.cluster_km,
+                "stability": args.stability,
+                "plume_height_m": args.plume_height_m,
+                "emission_factor": args.emission_factor,
+                "now": now,
+            },
+            runtime,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else format_aqi(result))
+    return 0
+
+
+def format_aqi(result: dict) -> str:
+    lines = [
+        "WildFireBot smoke AQI forecast (Gaussian plume)",
+        f"Target: {result['latitude']:.3f}, {result['longitude']:.3f}",
+        f"Search radius: {result['radius_km']:.0f} km",
+        f"DATA MODE: {result['data_mode']}",
+        f"Fire clusters in radius: {result['fire_clusters']}",
+    ]
+    for cluster in result["clusters"][:5]:
+        where = cluster["direction_from_target"] or "?"
+        line = (
+            f"- {cluster['distance_km']} km {where}, FRP {cluster['frp_mw']:.0f} MW, "
+            f"{cluster['hotspots']} hotspot(s)"
+        )
+        if cluster["downwind_now"]:
+            line += f", target is downwind, smoke arrives in about {cluster['arrival_hours']} h"
+        lines.append(line)
+    lines.append("")
+    lines.append(
+        "+h    time (UTC)         AQI  category                        PM2.5 (base + fire)"
+    )
+    for row in result["horizons"]:
+        lines.append(
+            f"+{row['horizon_hours']:<3}  {row['time']}  {row['aqi']:>3}  {row['category']:<30}  "
+            f"{row['pm25']:>6} ({row['baseline_pm25']} + {row['fire_pm25']})"
+        )
+    if result["notices"]:
+        lines.append("")
+        lines.append("DEGRADED MODE" if result["degraded"] else "Data notes")
+        lines.extend(f"- {note}" for note in result["notices"])
+    lines.extend(["", result["disclaimer"]])
+    return "\n".join(lines)
 
 
 def _validate(args: argparse.Namespace) -> None:
