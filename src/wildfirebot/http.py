@@ -159,10 +159,12 @@ class FixtureTransport:
                 if f"/{source}/" in url:
                     return self.root / "firms" / f"{source}.csv"
             return None
+        if "air-quality-api.open-meteo.com" in url:
+            return self.root / "openmeteo_air_quality.json"
         if "api.open-meteo.com" in url:
             return self.root / "openmeteo.json"
         if "airnowapi.org" in url:
-            if "/aq/observation/latLong/current/" in url:
+            if "/aq/observation/current/ziplatlong/" in url:
                 return self.root / "airnow_current.json"
             return self.root / "airnow.json"
         if "api.openaq.org" in url:

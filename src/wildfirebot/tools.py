@@ -15,13 +15,16 @@ from pathlib import Path
 
 import pandas as pd
 
+from wildfirebot.aqi_forecast import AqiForecastReport, build_aqi_forecast
 from wildfirebot.http import FileCache, FixtureTransport, HttpClient, UrllibTransport
 from wildfirebot.model.aqi import pm25_to_aqi
+from wildfirebot.model.plume import DEFAULT_HORIZONS, STABILITY_CLASSES, PlumeConfig
 from wildfirebot.pipeline import ForecastReport, build_report
 from wildfirebot.sources.airnow import AirNowClient
 from wildfirebot.sources.firms import DEFAULT_SOURCES, KNOWN_SOURCES, FirmsClient, parse_sources
 from wildfirebot.sources.openaq import OpenAQClient
 from wildfirebot.sources.openmeteo import OpenMeteoClient
+from wildfirebot.sources.openmeteo_aq import OpenMeteoAirQualityClient
 
 DATA_MODE_LIVE = "live"
 DATA_MODE_FIXTURES = "fixtures (not live)"
@@ -48,6 +51,49 @@ TOOLS: list[dict] = [
                     "description": "Days of FIRMS detections",
                 },
                 "lookback_hours": {"type": "integer", "default": 12},
+            },
+            "required": ["lat", "lon"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "forecast_smoke_aqi",
+        "description": (
+            "Forecast PM2.5 and US EPA AQI at a latitude and longitude for the next 0 to 48 "
+            "hours. Adds a Gaussian plume from each NASA FIRMS fire cluster (emission from "
+            "fire radiative power, carried by the Open-Meteo wind forecast) to the Open-Meteo "
+            "background PM2.5 forecast. Works for brand-new fires because it needs no history. "
+            "A screening estimate, not a health advisory."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "lat": {"type": "number", "description": "Target latitude"},
+                "lon": {"type": "number", "description": "Target longitude"},
+                "radius_km": {"type": "number", "default": 150},
+                "horizons": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 0, "maximum": 120},
+                    "default": list(DEFAULT_HORIZONS),
+                    "description": "Forecast horizons in hours from now",
+                },
+                "days": {
+                    "type": "integer",
+                    "default": 1,
+                    "description": "Days of FIRMS detections",
+                },
+                "stability": {
+                    "type": "string",
+                    "enum": list(STABILITY_CLASSES),
+                    "default": "D",
+                    "description": "Pasquill-Gifford stability class",
+                },
+                "plume_height_m": {"type": "number", "default": 200},
+                "emission_factor": {
+                    "type": "number",
+                    "default": 5.5,
+                    "description": "PM2.5 emission in g/s per MW of FRP",
+                },
             },
             "required": ["lat", "lon"],
             "additionalProperties": False,
@@ -85,6 +131,7 @@ class Runtime:
     airnow: AirNowClient
     openaq: OpenAQClient
     data_mode: str
+    air_quality: OpenMeteoAirQualityClient | None = None
 
 
 def build_runtime(
@@ -131,6 +178,7 @@ def build_runtime(
         airnow=AirNowClient(os.environ.get("AIRNOW_API_KEY", ""), http, refresh=refresh),
         openaq=OpenAQClient(os.environ.get("OPENAQ_API_KEY", ""), http, refresh=refresh),
         data_mode=data_mode,
+        air_quality=OpenMeteoAirQualityClient(http, refresh=refresh, now=moment),
     )
 
 
@@ -148,6 +196,8 @@ def call_tool(name: str, arguments: dict | None = None, runtime: Runtime | None 
         }
     if name == "forecast_smoke":
         return forecast_smoke(payload, runtime)
+    if name == "forecast_smoke_aqi":
+        return forecast_smoke_aqi(payload, runtime)
     known = ", ".join(tool["name"] for tool in TOOLS)
     raise ValueError(f"Unknown tool {name!r}. Known tools: {known}")
 
@@ -209,6 +259,139 @@ def report_to_dict(report: ForecastReport) -> dict:
         "observations": _observations(report.observations),
         "notices": list(report.notices),
     }
+
+
+def forecast_smoke_aqi(arguments: dict, runtime: Runtime | None = None) -> dict:
+    latitude = float(arguments["lat"])
+    longitude = float(arguments["lon"])
+    if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+        raise ValueError("latitude must be between -90 and 90 and longitude between -180 and 180")
+    radius_km = float(arguments.get("radius_km", 150))
+    if not 1 <= radius_km <= 2000:
+        raise ValueError("radius_km must be between 1 and 2000")
+    horizons = [int(hour) for hour in arguments.get("horizons") or DEFAULT_HORIZONS]
+    config = PlumeConfig(
+        emission_factor_g_s_per_mw=float(arguments.get("emission_factor", 5.5)),
+        stability=str(arguments.get("stability", "D")).upper(),
+        plume_height_m=float(arguments.get("plume_height_m", 200)),
+    )
+    cluster_km = float(arguments.get("cluster_km", 3))
+    active = runtime or build_runtime(cluster_km=cluster_km)
+    air_quality = active.air_quality or OpenMeteoAirQualityClient(active.http)
+    report = build_aqi_forecast(
+        latitude=latitude,
+        longitude=longitude,
+        radius_km=radius_km,
+        detection_days=int(arguments.get("days", 1)),
+        cluster_km=cluster_km,
+        now=_moment(arguments.get("now")),
+        firms=active.firms,
+        weather=active.weather,
+        air_quality=air_quality,
+        airnow=active.airnow,
+        openaq=active.openaq,
+        data_mode=active.data_mode,
+        horizons=horizons,
+        config=config,
+    )
+    return aqi_report_to_dict(report)
+
+
+def aqi_report_to_dict(report: AqiForecastReport) -> dict:
+    from wildfirebot.geo import compass_point, haversine_km
+
+    first_wind = next(
+        (row.wind_from_deg for row in report.horizons if row.wind_from_deg is not None), None
+    )
+    clusters = []
+    current = report.horizons[0] if report.horizons else None
+    for index, cluster in enumerate(report.clusters):
+        part = None
+        if current is not None:
+            part = next((p for p in current.contributions if p.cluster_index == index), None)
+        if part is None:
+            distance = haversine_km(
+                cluster.latitude, cluster.longitude, report.latitude, report.longitude
+            )
+        else:
+            distance = part.distance_km
+        bearing_to_fire = None
+        if part is not None:
+            bearing_to_fire = (part.bearing_from_fire_deg + 180.0) % 360.0
+        clusters.append(
+            {
+                "latitude": cluster.latitude,
+                "longitude": cluster.longitude,
+                "distance_km": round(distance, 1),
+                "direction_from_target": None
+                if bearing_to_fire is None
+                else compass_point(bearing_to_fire),
+                "frp_mw": cluster.frp_mw,
+                "hotspots": cluster.count,
+                "downwind_now": None if part is None else part.downwind,
+                "arrival_hours": None
+                if part is None or not part.downwind
+                else round(part.arrival_hours, 1),
+                "last_seen": _iso(cluster.last_seen),
+            }
+        )
+    clusters.sort(key=lambda item: item["distance_km"])
+    horizons = [
+        {
+            "horizon_hours": row.horizon_hours,
+            "time": _iso(row.time),
+            "wind_speed_m_s": None if row.wind_speed_m_s is None else round(row.wind_speed_m_s, 1),
+            "wind_from_deg": None if row.wind_from_deg is None else round(row.wind_from_deg),
+            "baseline_pm25": round(row.baseline_pm25, 1),
+            "baseline_source": row.baseline_source,
+            "fire_pm25": round(row.fire_pm25, 1),
+            "pm25": round(row.pm25, 1),
+            "aqi": row.aqi,
+            "category": row.category,
+            "contributing_clusters": sum(1 for part in row.contributions if part.pm25 > 0),
+            "notes": list(row.notes),
+        }
+        for row in report.horizons
+    ]
+    worst = max(horizons, key=lambda row: row["aqi"]) if horizons else None
+    return {
+        "latitude": report.latitude,
+        "longitude": report.longitude,
+        "radius_km": report.radius_km,
+        "generated_at": _iso(report.generated_at),
+        "data_mode": report.data_mode,
+        "degraded": report.degraded,
+        "disclaimer": report.disclaimer,
+        "model": {
+            "name": "gaussian-plume",
+            "emission_factor_g_s_per_mw": report.config.emission_factor_g_s_per_mw,
+            "stability": report.config.stability,
+            "plume_height_m": report.config.plume_height_m,
+            "downwind_half_angle_deg": report.config.downwind_half_angle_deg,
+            "max_fire_pm25": report.config.max_fire_pm25,
+            "max_frp_mw": report.config.max_frp_mw,
+        },
+        "worst": None
+        if worst is None
+        else {key: worst[key] for key in ("horizon_hours", "time", "aqi", "category", "pm25")},
+        "prevailing_wind_from_deg": None if first_wind is None else round(first_wind),
+        "fire_clusters": len(report.clusters),
+        "clusters": clusters[:10],
+        "horizons": horizons,
+        "observations": _observations(report.observations)[:5],
+        "notices": list(report.notices),
+    }
+
+
+def _moment(now: object) -> datetime:
+    if isinstance(now, str):
+        parsed = datetime.fromisoformat(now.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    if isinstance(now, datetime):
+        return now if now.tzinfo else now.replace(tzinfo=UTC)
+    return datetime.now(UTC)
 
 
 def _peak(report: ForecastReport) -> dict | None:

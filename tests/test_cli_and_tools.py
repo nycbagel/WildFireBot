@@ -154,7 +154,11 @@ def test_cli_names_the_firms_source_that_failed(tmp_path, monkeypatch, capsys):
 
 def test_mcp_tools_return_json(monkeypatch):
     _keys(monkeypatch)
-    assert [tool["name"] for tool in list_tools()] == ["forecast_smoke", "pm25_to_aqi"]
+    assert [tool["name"] for tool in list_tools()] == [
+        "forecast_smoke",
+        "forecast_smoke_aqi",
+        "pm25_to_aqi",
+    ]
     converted = call_tool("pm25_to_aqi", {"concentration": 18.4})
     assert converted == {"aqi": 68, "category": "Moderate", "concentration": 18.4}
 

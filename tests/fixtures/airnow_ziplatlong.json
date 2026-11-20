@@ -1,0 +1,35 @@
+[
+  {
+    "dateObserved": "2026-11-19",
+    "hourObserved": "15:00",
+    "localTimeZone": "PST",
+    "reportingAreaName": "Oakland",
+    "siteID": "060010011",
+    "siteName": "Oakland West",
+    "parameterName": "PM2.5",
+    "nowcastAQI": 8,
+    "aqiCategoryName": "Good",
+    "reportingAgency": "Bay Area Air District"
+  },
+  {
+    "dateObserved": "2026-11-19",
+    "hourObserved": "15:00",
+    "localTimeZone": "PST",
+    "reportingAreaName": "Oakland",
+    "siteID": "060010009",
+    "siteName": "Oakland",
+    "parameterName": "O3",
+    "nowcastAQI": 20,
+    "aqiCategoryName": "Good",
+    "reportingAgency": "Bay Area Air District"
+  },
+  {
+    "dateObserved": "2026-11-19",
+    "hourObserved": "15:00",
+    "localTimeZone": "PST",
+    "reportingAreaName": "Oakland",
+    "siteName": "Broken",
+    "parameterName": "PM2.5",
+    "nowcastAQI": -1
+  }
+]

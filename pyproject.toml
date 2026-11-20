@@ -42,6 +42,7 @@ packages = ["src/wildfirebot"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["."]
 
 [tool.ruff]
 target-version = "py311"
