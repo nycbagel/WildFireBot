@@ -2,6 +2,8 @@
 
 Satellite fire detections and the forecast wind, turned into an hourly smoke-exposure score for one location.
 
+Live MCP endpoint: https://wildfirebot.onrender.com/mcp
+
 ## Inspiration
 
 People downwind of a wildfire often find out from the sky, not from a monitor on their block. NASA FIRMS already sees the hotspots, including ultra-real-time detections over the US and Canada, and forecast models already know which way the wind is about to blow. This project is for the Berkeley x Stanford Grok Bot Hackathon, Most Technically Complex track: make that space data useful to someone standing in the plume.
@@ -135,7 +137,56 @@ This is an estimate of relative smoke exposure from satellite detections and for
 
 ## Use with your AI agent
 
-The MCP server is `wildfirebot-mcp`. Stdio is the default. No clone is required once `uv` is installed ([install uv](https://docs.astral.sh/uv/getting-started/installation/)):
+### Quickest: use the hosted server (no keys)
+
+A public instance is running at `https://wildfirebot.onrender.com/mcp`. No API keys and no token are needed, and there is nothing to install. It is rate limited to 60 requests per minute per IP. It runs on Render's free tier, which sleeps when idle, so the first call after a quiet period can take about a minute.
+
+Cursor (`~/.cursor/mcp.json`) and other JSON configs:
+
+```json
+{
+  "mcpServers": {
+    "wildfirebot": {
+      "url": "https://wildfirebot.onrender.com/mcp"
+    }
+  }
+}
+```
+
+Claude Code:
+
+```bash
+claude mcp add --transport http wildfirebot https://wildfirebot.onrender.com/mcp
+```
+
+OpenAI Codex:
+
+```bash
+codex mcp add wildfirebot --url https://wildfirebot.onrender.com/mcp
+```
+
+Claude Desktop only launches local servers from its config file, so bridge with `mcp-remote` (no header needed):
+
+```json
+{
+  "mcpServers": {
+    "wildfirebot": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://wildfirebot.onrender.com/mcp"]
+    }
+  }
+}
+```
+
+Grok Bot: paste "Add a custom MCP server named wildfirebot at https://wildfirebot.onrender.com/mcp" into a chat.
+
+Try: "What will the smoke AQI be in Oakland over the next 24 hours?"
+
+### Run your own copy (needs your own API keys)
+
+The sections below run the server on your machine or host it yourself. API keys are optional for users of the hosted server above; you only need them to run your own copy.
+
+The MCP server is `wildfirebot-mcp`. Stdio is the default when you run it yourself. No clone is required once `uv` is installed ([install uv](https://docs.astral.sh/uv/getting-started/installation/)):
 
 ```bash
 uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp
@@ -153,7 +204,7 @@ The tools are `forecast_smoke` (`lat`, `lon`, `hours` default 48, `radius_km` de
 
 A prompt to try in any of the clients below: "What will the smoke AQI be in Oakland over the next 24 hours?"
 
-### Claude Desktop, Cursor, and other JSON configs
+### Claude Desktop, Cursor, and other JSON configs (local, your own keys)
 
 ```json
 {
@@ -310,6 +361,8 @@ Claude Code adds that URL with `claude mcp add --transport http wildfirebot http
 
 ## Hosted server (no API keys for users)
 
+The live instance at `https://wildfirebot.onrender.com/mcp` is deployed on Render as a Docker web service. Both the Blueprint path and the plain Web Service path (language Docker, health check path `/health`) work. `WFB_ACCESS_TOKEN` is optional, and the public instance currently runs without it, so it is open with only the rate limit.
+
 Run the MCP server once with the operator's keys, and everyone else connects by URL. The keys stay in the host's environment and are never sent to clients.
 
 **Environment variables**
@@ -323,13 +376,13 @@ Run the MCP server once with the operator's keys, and everyone else connects by 
 
 `GET /health` returns `{"status":"ok"}` without auth, for host health checks.
 
-**Deploy on Render**: create a Render account, choose New > Blueprint, and point it at this repo (`render.yaml`). Paste `FIRMS_MAP_KEY`, `AIRNOW_API_KEY`, and `WFB_ACCESS_TOKEN` when prompted. The endpoint is `https://<service>.onrender.com/mcp`. The free tier sleeps when idle, so the first call can take about a minute.
+**Deploy on Render**: create a Render account, choose New > Blueprint, and point it at this repo (`render.yaml`). Paste `FIRMS_MAP_KEY` and `AIRNOW_API_KEY` when prompted, plus `WFB_ACCESS_TOKEN` if you want to require a token. The endpoint is `https://<service>.onrender.com/mcp`. The free tier sleeps when idle, so the first call can take about a minute.
 
 **Deploy on Fly.io**: `fly launch --copy-config --no-deploy`, then `fly secrets set FIRMS_MAP_KEY=... AIRNOW_API_KEY=... WFB_ACCESS_TOKEN=...`, then `fly deploy`.
 
 **Any Docker host**: `docker build -t wildfirebot-mcp .` then `docker run -p 8000:8000 -e PORT=8000 -e FIRMS_MAP_KEY -e AIRNOW_API_KEY -e WFB_ACCESS_TOKEN wildfirebot-mcp`.
 
-**Connect as a user.** Cursor (`~/.cursor/mcp.json`) or Claude Code:
+**Connect to your own self-hosted server (templates).** Replace `YOUR-HOST`. Omit the `headers` line if you did not set `WFB_ACCESS_TOKEN`. For the public instance, use the quick setup above instead. Cursor (`~/.cursor/mcp.json`) or Claude Code:
 
 ```json
 {
@@ -342,7 +395,7 @@ Run the MCP server once with the operator's keys, and everyone else connects by 
 }
 ```
 
-Claude Desktop only launches local servers from its config file, so bridge with `mcp-remote`:
+Claude Desktop (self-host template with a token) bridges with `mcp-remote`:
 
 ```json
 {
