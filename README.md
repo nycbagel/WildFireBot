@@ -92,6 +92,8 @@ Dina Safreno and Dani Abay described the idea to Grok Bot: predict AQI for a loc
 
 **Testing.** Grok Bot installed the package fresh on its own computer, ran live CLI forecasts for the Bay Area and Los Angeles, and confirmed degraded mode when keys were missing. It found that the MCP server was still a placeholder and had it built for real, then verified the tools with a real MCP client: `pm25_to_aqi(55)` returned AQI 149, Unhealthy for Sensitive Groups.
 
+The redacted session export is in [grok history](grok%20history/).
+
 ## How to run it
 
 ```bash
