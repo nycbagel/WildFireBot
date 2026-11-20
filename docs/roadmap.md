@@ -25,7 +25,7 @@ Done in this tree.
 
 ## Milestone 3 — MCP server, then a map
 
-The MCP server is done. `wildfirebot-mcp` speaks stdio by default and streamable HTTP with `--http`. It exposes the same handlers as the CLI:
+The MCP server is done. `wildfirebot-mcp` speaks stdio by default and streamable HTTP with `--http`. A public instance runs at https://wildfirebot.onrender.com/mcp (Render free tier, the operator's keys held server-side, so users need no keys). See "Hosted server" in the README. It exposes the same handlers as the CLI:
 
 - `forecast_smoke` for a lat/lon and an hour window, including degraded-mode notices.
 - `forecast_smoke_aqi` for the Gaussian plume PM2.5 and EPA AQI horizons.
