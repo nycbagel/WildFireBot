@@ -77,7 +77,22 @@ The MCP server is in place: an agent calls `forecast_smoke` and `pm25_to_aqi` ov
 
 ## How Grok Bot helped build it
 
-Placeholder for the team: describe how the Grok bot was used while building WildFireBot.
+Dina Safreno and Dani Abay described the idea to Grok Bot: predict AQI for a location from NASA FIRMS fire detections and forecast winds. Dina and Dani made the product decisions (the idea, the California focus, the MCP direction, and the Most Technically Complex track) and reviewed and merged the pull requests. Grok Bot did the research, the project brief, and the agent work below. It can also call WildFireBot itself over MCP. See [Grok Bot](#grok-bot).
+
+**Planning.** Grok Bot researched the data sources: the NASA FIRMS area API for MODIS, VIIRS NOAA-20, VIIRS NOAA-21, and Landsat; Open-Meteo winds at 10 m and about 850 hPa plus boundary-layer height; AirNow and OpenAQ PM2.5; and the EPA PM2.5-to-AQI breakpoints. It proposed the pipeline: FRP-weighted fire clusters, smoke transport along forecast winds, a PM2.5 model, then AQI.
+
+**Open-source structure.** Grok Bot proposed the repository layout and the milestones, and wrote the brief that encodes the track's criteria: data depth, real current data, and robustness (satellite-source fallback, low-confidence filtering, retries, a cache with staleness warnings, missing-wind-hour flags, and live data by default).
+
+**Code.** Grok Bot connected GitHub and launched a Cursor cloud agent on this repository, steering it across these pull requests:
+
+- Milestone 1: https://github.com/nycbagel/WildFireBot/pull/1
+- A CI test-import fix after a failing lint-and-test check, folded into main: https://github.com/nycbagel/WildFireBot/pull/2
+- The real MCP server: https://github.com/nycbagel/WildFireBot/pull/5, re-opened as https://github.com/nycbagel/WildFireBot/pull/8 into main when #5 was stuck targeting a closed stacked branch
+- Per-client MCP install docs: https://github.com/nycbagel/WildFireBot/pull/9
+
+**Testing.** Grok Bot installed the package fresh on its own computer, ran live CLI forecasts for the Bay Area and Los Angeles, and confirmed degraded mode when keys were missing. It found that the MCP server was still a placeholder and had it built for real, then verified the tools with a real MCP client: `pm25_to_aqi(55)` returned AQI 149, Unhealthy for Sensitive Groups.
+
+The redacted session export is in [grok history](grok%20history/).
 
 ## How to run it
 
@@ -120,33 +135,25 @@ This is an estimate of relative smoke exposure from satellite detections and for
 
 ## Use with your AI agent
 
-The MCP server is `wildfirebot-mcp` (stdio by default). There are two ways to run it.
-
-**Option A: from your local clone** (after the "How to run it" steps above). Use absolute paths, because the agent app does not start the server in the repo folder:
-
-```json
-{
-  "mcpServers": {
-    "wildfirebot": {
-      "command": "/ABSOLUTE/PATH/TO/WildFireBot/.venv/bin/wildfirebot-mcp",
-      "env": {
-        "FIRMS_MAP_KEY": "your-firms-map-key",
-        "AIRNOW_API_KEY": "your-airnow-key"
-      }
-    }
-  }
-}
-```
-
-On Windows the command is `C:\path\to\WildFireBot\.venv\Scripts\wildfirebot-mcp.exe`.
-
-**Option B: no clone, with uv.** Install uv first (`curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv`), then:
+The MCP server is `wildfirebot-mcp`. Stdio is the default. No clone is required once `uv` is installed ([install uv](https://docs.astral.sh/uv/getting-started/installation/)):
 
 ```bash
 uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp
 ```
 
-Add `--refresh` after `uvx` to pick up new commits. A Claude Desktop or Cursor config for this option:
+Keys:
+
+- `FIRMS_MAP_KEY` is required for fire detections. Sign up at https://firms.modaps.eosdis.nasa.gov/api/area/
+- `AIRNOW_API_KEY` is optional (nearest monitors). Request one at https://docs.airnowapi.org/account/request/
+- `OPENAQ_API_KEY` is optional (open measurements). See https://docs.openaq.org/using-the-api/quick-start
+
+Open-Meteo needs no key. If a key is missing, the tool result says so under `notices` and `degraded` instead of crashing. Every forecast includes a disclaimer: the score is a relative exposure index, not an official AQI and not a health advisory.
+
+The tools are `forecast_smoke` (`lat`, `lon`, `hours` default 48, `radius_km` default 250, `days` default 2, `lookback_hours` default 12), `forecast_smoke_aqi` (Gaussian plume PM2.5 and EPA AQI), and `pm25_to_aqi` (`concentration`).
+
+A prompt to try in any of the clients below: "What will the smoke AQI be in Oakland over the next 24 hours?"
+
+### Claude Desktop, Cursor, and other JSON configs
 
 ```json
 {
@@ -168,22 +175,138 @@ Add `--refresh` after `uvx` to pick up new commits. A Claude Desktop or Cursor c
 }
 ```
 
-Where the config goes:
+Needs `uv` on `PATH`. `FIRMS_MAP_KEY` is the fire feed. The AirNow and OpenAQ keys are optional.
 
-- Cursor: `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` for all projects), then enable `wildfirebot` under Settings → MCP.
-- Claude Desktop: `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS or `%APPDATA%\Claude\claude_desktop_config.json` on Windows, then restart Claude Desktop.
+### Claude Code
 
-Put the keys in the `env` block. The server only reads `.env` from its working directory, which agent apps usually do not set to the repo, so a `.env` in the clone is not picked up there.
+Requires the Claude Code CLI and `uv`. `FIRMS_MAP_KEY` is required for fire data. Add `AIRNOW_API_KEY` and `OPENAQ_API_KEY` the same way if you have them.
 
-Open-Meteo needs no key. If a key is missing, the tool result says so under `notices` and `degraded` instead of crashing. Every forecast includes a disclaimer: the score is a relative exposure index, not an official AQI and not a health advisory.
+Local scope is the default: private to you, and only the project you are in. `-e` is the short form of `--env`. Everything after `--` is the server command, so Claude Code does not treat `uvx` flags as its own:
 
-To host it at a URL, use streamable HTTP. The MCP endpoint is `http://127.0.0.1:8000/mcp`:
+```bash
+claude mcp add wildfirebot -e FIRMS_MAP_KEY=your-firms-map-key -- uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp
+```
+
+Optional keys are more `-e` flags, before `--`:
+
+```bash
+claude mcp add wildfirebot \
+  -e FIRMS_MAP_KEY=your-firms-map-key \
+  -e AIRNOW_API_KEY=your-airnow-key \
+  -e OPENAQ_API_KEY=your-openaq-key \
+  -- uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp
+```
+
+`--scope` (`-s`) chooses where that entry is stored:
+
+| Scope | Flag | Where it loads | Stored in |
+| --- | --- | --- | --- |
+| Local (default) | `--scope local` | This project, only you | `~/.claude.json` (under this project's path) |
+| User | `--scope user` | All of your projects, only you | `~/.claude.json` (top-level `mcpServers`) |
+| Project | `--scope project` | This project, shared with the team | `.mcp.json` in the project root |
+
+User scope, still private, for every project:
+
+```bash
+claude mcp add --scope user wildfirebot -e FIRMS_MAP_KEY=your-firms-map-key -- uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp
+```
+
+Project scope writes `.mcp.json` and is meant to be committed. Do not put a real key in that command. Add the command without `-e`, then put the key only in a copy that stays off git, or keep the key in local or user scope.
+
+The same project file, written by hand:
+
+```json
+{
+  "mcpServers": {
+    "wildfirebot": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/nycbagel/WildFireBot",
+        "wildfirebot-mcp"
+      ],
+      "env": {
+        "FIRMS_MAP_KEY": "your-firms-map-key"
+      }
+    }
+  }
+}
+```
+
+Claude Code reads `.mcp.json` when a session starts. The first time it sees a project server it asks you to approve it, because a cloned repo must not launch a process without consent. If you dismissed that prompt, run `claude mcp reset-project-choices` and start Claude Code again.
+
+Check the connection from the shell. `Added ...` only means the entry was saved. The first `claude mcp list` can show `✘ Failed to connect` while `uvx` downloads the package; run it again and look for `✔ Connected`. A project server you have not approved yet shows `⏸ Pending approval (run claude to approve)`.
+
+```bash
+claude mcp list
+claude mcp get wildfirebot
+```
+
+Inside a Claude Code session, `/mcp` shows the same status and the tool list. Restart the session after you edit `.mcp.json`.
+
+Try: "What will the smoke AQI be in Oakland over the next 24 hours?"
+
+### OpenAI Codex (CLI and IDE)
+
+Requires the Codex CLI and `uv`. The CLI, the IDE extension, and the ChatGPT desktop app share `~/.codex/config.toml`. `FIRMS_MAP_KEY` is required for fire data. Repeat `--env` for each optional key. The official flag is `--env`, not `-e`.
+
+```bash
+codex mcp add wildfirebot --env FIRMS_MAP_KEY=your-firms-map-key -- uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp
+```
+
+With the optional monitor keys:
+
+```bash
+codex mcp add wildfirebot \
+  --env FIRMS_MAP_KEY=your-firms-map-key \
+  --env AIRNOW_API_KEY=your-airnow-key \
+  --env OPENAQ_API_KEY=your-openaq-key \
+  -- uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp
+```
+
+The same entry in `~/.codex/config.toml` (or a project-scoped `.codex/config.toml`, which Codex loads only after you trust the project):
+
+```toml
+[mcp_servers.wildfirebot]
+command = "uvx"
+args = ["--from", "git+https://github.com/nycbagel/WildFireBot", "wildfirebot-mcp"]
+
+[mcp_servers.wildfirebot.env]
+FIRMS_MAP_KEY = "your-firms-map-key"
+AIRNOW_API_KEY = "your-airnow-key"
+OPENAQ_API_KEY = "your-openaq-key"
+```
+
+In the IDE extension: open the gear menu, select MCP servers, select Add server, choose STDIO, and enter the same command. Save, then select Restart extension.
+
+Verify from the shell with `codex mcp list`. In the Codex terminal UI, `/mcp` lists the active servers.
+
+Try: "What will the smoke AQI be in Oakland over the next 24 hours?"
+
+### Grok Bot
+
+Grok Bot adds a custom MCP server when you ask it in chat. It runs the server on its own computer. Paste this into a Grok Bot chat:
+
+> Add a custom MCP server named wildfirebot that runs `uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp`, with env FIRMS_MAP_KEY set to my key.
+
+`uv` has to be available on the computer Grok Bot uses. `FIRMS_MAP_KEY` is required for fire data. Mention `AIRNOW_API_KEY` and `OPENAQ_API_KEY` in the same message if you want those monitors. Grok Bot asks for the key securely rather than taking it in plain chat, confirms, then starts the server.
+
+If you are already hosting the server, give Grok Bot that HTTPS URL instead of the `uvx` command. Run `wildfirebot-mcp --http` (see below) and put HTTPS in front of it before sharing the URL.
+
+Try: "What will the smoke AQI be in Oakland over the next 24 hours?"
+
+### Host it at a URL
+
+Streamable HTTP serves the same tools. The local MCP endpoint is `http://127.0.0.1:8000/mcp`:
 
 ```bash
 uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp --http --port 8000
 ```
 
 `--host` defaults to `127.0.0.1`. The tools are `forecast_smoke` (`lat`, `lon`, `hours` default 48, `radius_km` default 250, `days` default 2, `lookback_hours` default 12), `forecast_smoke_aqi` (Gaussian plume PM2.5 and EPA AQI), and `pm25_to_aqi` (`concentration`).
+
+Claude Code adds that URL with `claude mcp add --transport http wildfirebot https://your-host.example/mcp`. Codex adds it with `codex mcp add wildfirebot --url https://your-host.example/mcp`, or with `url = "https://your-host.example/mcp"` under `[mcp_servers.wildfirebot]` instead of `command` and `args`.
 
 ## Hosted server (no API keys for users)
 
