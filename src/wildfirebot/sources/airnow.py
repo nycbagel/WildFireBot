@@ -1,8 +1,11 @@
 """AirNow PM2.5 observations.
 
 The hourly bounding-box feed (`/aq/data/`) is the primary request. If it errors,
-the client asks for the current reporting-area observation by latitude and
-longitude. Concentrations are preferred. A response that only has an AQI is kept
+the client asks for the current observation by latitude and longitude through
+`/aq/observation/current/ziplatlong/`. AirNow retired the older
+`/aq/observation/latLong/current/` service on October 1, 2026 (it answers 410).
+The new service uses camelCase fields, reports a NowCast AQI without a
+concentration, and omits site coordinates, so those rows take the request point. Concentrations are preferred. A response that only has an AQI is kept
 and labeled as a reported AQI rather than converted backwards into a concentration.
 """
 
@@ -19,7 +22,7 @@ from wildfirebot.http import HttpClient, HttpError, format_age
 from wildfirebot.sources.base import SourceResult, TimeRange, optional_float
 
 AIRNOW_DATA_URL = "https://www.airnowapi.org/aq/data/"
-AIRNOW_CURRENT_URL = "https://www.airnowapi.org/aq/observation/latLong/current/"
+AIRNOW_CURRENT_URL = "https://www.airnowapi.org/aq/observation/current/ziplatlong/"
 
 OBS_COLUMNS = [
     "latitude",
@@ -53,24 +56,45 @@ def empty_observations() -> pd.DataFrame:
     return pd.DataFrame(columns=OBS_COLUMNS)
 
 
-def parse_airnow(payload: list, *, source_label: str = "airnow") -> pd.DataFrame:
+def parse_airnow(
+    payload: list,
+    *,
+    source_label: str = "airnow",
+    default_location: tuple[float, float] | None = None,
+) -> pd.DataFrame:
+    """Read either AirNow schema. `default_location` fills rows that carry no coordinates."""
     rows = []
     for item in payload:
         if not isinstance(item, dict):
             continue
-        parameter = str(item.get("Parameter") or item.get("ParameterName") or "")
+        parameter = str(
+            item.get("Parameter") or item.get("ParameterName") or item.get("parameterName") or ""
+        )
         if parameter and "PM25" not in parameter.upper().replace(".", "").replace(" ", ""):
             continue
         latitude = optional_float(item.get("Latitude", item.get("latitude")))
         longitude = optional_float(item.get("Longitude", item.get("longitude")))
+        if (latitude is None or longitude is None) and default_location is not None:
+            latitude, longitude = default_location
         if latitude is None or longitude is None:
             continue
         concentration = _first_float(item, "RawConcentration", "Value", "Concentration", "conc")
-        reported = _first_float(item, "AQI", "Aqi")
+        if concentration is not None and concentration < 0:
+            concentration = None
+        reported = _first_float(item, "AQI", "Aqi", "nowcastAQI", "aqi")
+        if reported is not None and reported < 0:
+            reported = None
         observed_at, time_label = _airnow_time(item)
         if concentration is None and reported is None:
             continue
-        site = item.get("SiteName") or item.get("ReportingArea") or item.get("Site") or ""
+        site = (
+            item.get("SiteName")
+            or item.get("siteName")
+            or item.get("ReportingArea")
+            or item.get("reportingAreaName")
+            or item.get("Site")
+            or ""
+        )
         rows.append(
             {
                 "latitude": latitude,
@@ -152,7 +176,7 @@ class AirNowClient:
         stale = stale or current.stale
         if current.stale and current.stored_at is not None:
             notices.append(self._stale_notice("AirNow current observation", current.stored_at))
-        frame = parse_airnow(json.loads(current.text))
+        frame = parse_airnow(json.loads(current.text), default_location=bbox.centroid)
         if frame.empty:
             notices.append("AirNow has no current PM2.5 observation near the box center.")
             return SourceResult(
@@ -235,13 +259,25 @@ def _airnow_time(item: dict) -> tuple[datetime | None, str]:
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=UTC)
             return parsed.astimezone(UTC), ""
-    date_text = item.get("DateObserved")
-    hour = item.get("HourObserved")
-    zone = item.get("LocalTimeZone") or "local"
+    date_text = item.get("DateObserved") or item.get("dateObserved")
+    hour = item.get("HourObserved", item.get("hourObserved"))
+    zone = item.get("LocalTimeZone") or item.get("localTimeZone") or "local"
     if date_text:
-        hour_text = f"{int(hour):02d}:00" if hour not in (None, "") else ""
+        hour_text = _hour_text(hour)
         return None, f"{date_text} {hour_text} {zone}".strip()
     return None, ""
+
+
+def _hour_text(hour: object) -> str:
+    """Old schema sends 12, the ziplatlong schema sends "15:00"."""
+    if hour in (None, ""):
+        return ""
+    text = str(hour).strip()
+    head = text.split(":", 1)[0]
+    try:
+        return f"{int(head):02d}:00"
+    except ValueError:
+        return text
 
 
 def _within_window(frame: pd.DataFrame, time_range: TimeRange) -> pd.DataFrame:
