@@ -206,6 +206,27 @@ def test_cli_aqi_subcommand(tmp_path, monkeypatch, capsys):
     assert parsed["horizons"][1]["fire_pm25"] > 0
 
 
+def test_terrain_falls_back_when_apis_fail():
+    from wildfirebot.model.terrain import terrain_adjustment
+
+    # conftest blocks urlopen, so both Open-Meteo calls fail.
+    result = terrain_adjustment(38.2, -122.4, 37.8, -122.4)
+    assert result["blocking_factor"] == 1.0
+    assert result["stability_class"] == "D"
+    assert result["mixing_height_m"] == 800.0
+    assert any("elevation failed" in note for note in result["notes"])
+    assert any("weather failed" in note for note in result["notes"])
+
+
+def test_blocking_factor_reduces_contribution():
+    cluster = _north_of_target(36.0)
+    open_air, _ = fire_pm25_at([cluster], *TARGET, 0.0, 10.0, 6.0)
+    adjust = {"blocking_factor": 0.4, "stability_class": "D", "mixing_height_m": 5000.0}
+    blocked, _ = fire_pm25_at([cluster], *TARGET, 0.0, 10.0, 6.0, terrain=[adjust])
+    assert open_air > 0
+    assert blocked == pytest.approx(open_air * 0.4)
+
+
 def _keys(monkeypatch):
     monkeypatch.setenv("FIRMS_MAP_KEY", "test-firms-key")
     monkeypatch.setenv("AIRNOW_API_KEY", "test-airnow-key")

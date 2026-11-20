@@ -173,6 +173,7 @@ def _add_aqi_parser(sub) -> None:
     )
     aqi.add_argument("--plume-height-m", type=float, default=200, help="Effective plume height")
     aqi.add_argument("--emission-factor", type=float, default=5.5, help="PM2.5 g/s per MW of FRP")
+    aqi.add_argument("--no-terrain", action="store_true", help="Skip the terrain adjustment")
     aqi.add_argument("--json", action="store_true", help="Print the tool's JSON output")
     aqi.add_argument("--cache-dir", default=None, help="Response cache directory")
     aqi.add_argument(
@@ -210,6 +211,7 @@ def _run_aqi(args: argparse.Namespace) -> int:
                 "stability": args.stability,
                 "plume_height_m": args.plume_height_m,
                 "emission_factor": args.emission_factor,
+                "terrain": not args.no_terrain,
                 "now": now,
             },
             runtime,
@@ -247,6 +249,10 @@ def format_aqi(result: dict) -> str:
             f"+{row['horizon_hours']:<3}  {row['time']}  {row['aqi']:>3}  {row['category']:<30}  "
             f"{row['pm25']:>6} ({row['baseline_pm25']} + {row['fire_pm25']})"
         )
+    if result.get("terrain_notes"):
+        lines.append("")
+        lines.append("Terrain")
+        lines.extend(f"- {note}" for note in result["terrain_notes"])
     if result["notices"]:
         lines.append("")
         lines.append("DEGRADED MODE" if result["degraded"] else "Data notes")
