@@ -96,7 +96,10 @@ The redacted session export is in [grok history](grok%20history/).
 
 ## How to run it
 
+Requires Python 3.11 or newer (`python3 --version`). On macOS the system `python3` may be older; use `brew install python@3.12` or `uv python install 3.12`.
+
 ```bash
+git clone https://github.com/nycbagel/WildFireBot && cd WildFireBot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
@@ -107,7 +110,7 @@ Open-Meteo needs no key. The others do:
 
 - `FIRMS_MAP_KEY` from https://firms.modaps.eosdis.nasa.gov/api/area/
 - `AIRNOW_API_KEY` from https://docs.airnowapi.org/account/request/
-- `OPENAQ_API_KEY` from https://docs.openaq.org/using-the-api/quick-start
+- `OPENAQ_API_KEY` from https://docs.openaq.org/using-the-api/quick-start (optional; without it OpenAQ is skipped and noted under `notices`)
 
 The CLI reads `.env` without overriding variables that are already set.
 
@@ -298,9 +301,57 @@ Try: "What will the smoke AQI be in Oakland over the next 24 hours?"
 Streamable HTTP serves the same tools. The local MCP endpoint is `http://127.0.0.1:8000/mcp`:
 
 ```bash
-uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp -- --http --port 8000
+uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp --http --port 8000
 ```
 
-`--host` defaults to `127.0.0.1`. The `--` before `--http` is for `uvx`, so it passes the flag through to `wildfirebot-mcp`.
+`--host` defaults to `127.0.0.1`. The tools are `forecast_smoke` (`lat`, `lon`, `hours` default 48, `radius_km` default 250, `days` default 2, `lookback_hours` default 12), `forecast_smoke_aqi` (Gaussian plume PM2.5 and EPA AQI), and `pm25_to_aqi` (`concentration`).
 
 Claude Code adds that URL with `claude mcp add --transport http wildfirebot https://your-host.example/mcp`. Codex adds it with `codex mcp add wildfirebot --url https://your-host.example/mcp`, or with `url = "https://your-host.example/mcp"` under `[mcp_servers.wildfirebot]` instead of `command` and `args`.
+
+## Hosted server (no API keys for users)
+
+Run the MCP server once with the operator's keys, and everyone else connects by URL. The keys stay in the host's environment and are never sent to clients.
+
+**Environment variables**
+
+| Variable | Purpose |
+| --- | --- |
+| `FIRMS_MAP_KEY`, `AIRNOW_API_KEY` | Operator's keys (set as host secrets, never commit them) |
+| `PORT` | Set by the host. When present the server serves HTTP on `0.0.0.0:$PORT` at `/mcp` |
+| `WFB_ACCESS_TOKEN` | Optional. If set, clients must send `Authorization: Bearer <token>`. If unset the server is open |
+| `WFB_RATE_LIMIT` / `WFB_RATE_WINDOW_S` | Requests per client IP per window (default 60 per 60 s, `0` disables) |
+
+`GET /health` returns `{"status":"ok"}` without auth, for host health checks.
+
+**Deploy on Render**: create a Render account, choose New > Blueprint, and point it at this repo (`render.yaml`). Paste `FIRMS_MAP_KEY`, `AIRNOW_API_KEY`, and `WFB_ACCESS_TOKEN` when prompted. The endpoint is `https://<service>.onrender.com/mcp`. The free tier sleeps when idle, so the first call can take about a minute.
+
+**Deploy on Fly.io**: `fly launch --copy-config --no-deploy`, then `fly secrets set FIRMS_MAP_KEY=... AIRNOW_API_KEY=... WFB_ACCESS_TOKEN=...`, then `fly deploy`.
+
+**Any Docker host**: `docker build -t wildfirebot-mcp .` then `docker run -p 8000:8000 -e PORT=8000 -e FIRMS_MAP_KEY -e AIRNOW_API_KEY -e WFB_ACCESS_TOKEN wildfirebot-mcp`.
+
+**Connect as a user.** Cursor (`~/.cursor/mcp.json`) or Claude Code:
+
+```json
+{
+  "mcpServers": {
+    "wildfirebot": {
+      "url": "https://YOUR-HOST/mcp",
+      "headers": { "Authorization": "Bearer YOUR_TOKEN" }
+    }
+  }
+}
+```
+
+Claude Desktop only launches local servers from its config file, so bridge with `mcp-remote`:
+
+```json
+{
+  "mcpServers": {
+    "wildfirebot": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://YOUR-HOST/mcp", "--header", "Authorization: Bearer ${WFB_TOKEN}"],
+      "env": { "WFB_TOKEN": "YOUR_TOKEN" }
+    }
+  }
+}
+```

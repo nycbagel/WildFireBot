@@ -1,7 +1,7 @@
 """MCP server for WildFireBot.
 
 stdio is the default so `wildfirebot-mcp` works as a local agent tool.
-`--http` serves the same tools over streamable HTTP.
+`--http` (or setting PORT) serves the same tools over streamable HTTP with optional\nbearer-token auth and a per-IP rate limit; see wildfirebot.hosting.
 """
 
 from __future__ import annotations
@@ -187,26 +187,33 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Serve streamable HTTP instead of stdio (default path /mcp)",
     )
-    parser.add_argument("--host", default="127.0.0.1", help="HTTP bind address (default 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8000, help="HTTP port (default 8000)")
+    parser.add_argument(
+        "--host",
+        default=None,
+        help="HTTP bind address (default 127.0.0.1, or 0.0.0.0 when PORT is set)",
+    )
+    parser.add_argument(
+        "--port", type=int, default=None, help="HTTP port (default $PORT, else 8000)"
+    )
     args = parser.parse_args(argv)
     _load_local_env()
     server = build_server()
-    if args.http:
-        server.run(
-            "streamable-http",
-            host=args.host,
-            port=args.port,
-            streamable_http_path="/mcp",
-        )
+    hosted = "PORT" in os.environ
+    if args.http or hosted:
+        from wildfirebot.hosting import serve
+
+        port = args.port or int(os.environ.get("PORT", "8000"))
+        host = args.host or ("0.0.0.0" if hosted else "127.0.0.1")
+        serve(server, host, port)
         return
     server.run("stdio")
 
 
 def _load_local_env() -> None:
-    """Fill missing keys from a .env file in the working directory. Existing env wins."""
-    path = Path(".env")
-    if not path.is_file():
+    """Fill missing keys from .env (working directory, then the repo checkout). Existing env wins."""
+    candidates = [Path(".env"), Path(__file__).resolve().parents[2] / ".env"]
+    path = next((c for c in candidates if c.is_file()), None)
+    if path is None:
         return
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
