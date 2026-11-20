@@ -77,7 +77,20 @@ The MCP server is in place: an agent calls `forecast_smoke` and `pm25_to_aqi` ov
 
 ## How Grok Bot helped build it
 
-Placeholder for the team: describe how the Grok bot was used while building WildFireBot.
+Dina Safreno and Dani Abay described the idea to Grok Bot: predict AQI for a location from NASA FIRMS fire detections and forecast winds. Dina and Dani made the product decisions (the idea, the California focus, the MCP direction, and the Most Technically Complex track) and reviewed and merged the pull requests. Grok Bot did the research, the project brief, and the agent work below. It can also call WildFireBot itself over MCP. See [Grok Bot](#grok-bot).
+
+**Planning.** Grok Bot researched the data sources: the NASA FIRMS area API for MODIS, VIIRS NOAA-20, VIIRS NOAA-21, and Landsat; Open-Meteo winds at 10 m and about 850 hPa plus boundary-layer height; AirNow and OpenAQ PM2.5; and the EPA PM2.5-to-AQI breakpoints. It proposed the pipeline: FRP-weighted fire clusters, smoke transport along forecast winds, a PM2.5 model, then AQI.
+
+**Open-source structure.** Grok Bot proposed the repository layout and the milestones, and wrote the brief that encodes the track's criteria: data depth, real current data, and robustness (satellite-source fallback, low-confidence filtering, retries, a cache with staleness warnings, missing-wind-hour flags, and live data by default).
+
+**Code.** Grok Bot connected GitHub and launched a Cursor cloud agent on this repository, steering it across these pull requests:
+
+- Milestone 1: https://github.com/nycbagel/WildFireBot/pull/1
+- A CI test-import fix after a failing lint-and-test check, folded into main: https://github.com/nycbagel/WildFireBot/pull/2
+- The real MCP server: https://github.com/nycbagel/WildFireBot/pull/5, re-opened as https://github.com/nycbagel/WildFireBot/pull/8 into main when #5 was stuck targeting a closed stacked branch
+- Per-client MCP install docs: https://github.com/nycbagel/WildFireBot/pull/9
+
+**Testing.** Grok Bot installed the package fresh on its own computer, ran live CLI forecasts for the Bay Area and Los Angeles, and confirmed degraded mode when keys were missing. It found that the MCP server was still a placeholder and had it built for real, then verified the tools with a real MCP client: `pm25_to_aqi(55)` returned AQI 149, Unhealthy for Sensitive Groups.
 
 ## How to run it
 
