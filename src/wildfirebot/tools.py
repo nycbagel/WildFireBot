@@ -1,8 +1,7 @@
-"""Tool handlers the CLI uses today and an MCP server will expose later.
+"""Tool handlers shared by the CLI and the MCP server.
 
-The Model Context Protocol server is milestone 3. It should be a thin stdio
-adapter over `TOOLS` and `call_tool`. Forecast math stays in the pipeline so the
-human CLI and the agent server cannot drift apart.
+Forecast math stays in the pipeline so the human CLI and `wildfirebot-mcp`
+cannot drift apart.
 """
 
 from __future__ import annotations
@@ -187,6 +186,26 @@ def build_runtime(
     )
 
 
+def runtime_from_env() -> Runtime:
+    """Build clients from the process environment.
+
+    `WILDFIREBOT_FIXTURE_DIR` selects recorded responses for tests. Unset, the
+    clients use live feeds. `WILDFIREBOT_NOW` overrides the clock when a test
+    needs a fixed timestamp. Missing API keys are left empty; callers report
+    that instead of raising.
+    """
+    fixture = os.environ.get("WILDFIREBOT_FIXTURE_DIR", "").strip()
+    now_text = os.environ.get("WILDFIREBOT_NOW", "").strip()
+    now = None
+    if now_text:
+        parsed = datetime.fromisoformat(now_text.replace("Z", "+00:00"))
+        now = parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return build_runtime(
+        fixture_dir=Path(fixture) if fixture else None,
+        now=now,
+    )
+
+
 def call_tool(name: str, arguments: dict | None = None, runtime: Runtime | None = None) -> dict:
     """Run one tool and return a JSON-ready dict. This is the MCP `tools/call` body."""
     payload = arguments or {}
@@ -218,6 +237,8 @@ def forecast_smoke(arguments: dict, runtime: Runtime | None = None) -> dict:
         raise ValueError("latitude must be between -90 and 90 and longitude between -180 and 180")
     active = runtime or build_runtime(cluster_km=float(arguments.get("cluster_km", 3)))
     now = arguments.get("now")
+    if now is None:
+        now = os.environ.get("WILDFIREBOT_NOW", "").strip() or None
     if isinstance(now, str):
         parsed = datetime.fromisoformat(now.replace("Z", "+00:00"))
         if parsed.tzinfo is None:

@@ -73,7 +73,7 @@ Feeds that look like one API are several products. VIIRS NOAA-21 can be up while
 
 Milestone 2 trains a PM2.5 model on the smoke score plus monitor observations, with a time-based split and a persistence baseline. `predict_pm25` raises until that exists. The breakpoint function stays the way a concentration becomes an AQI.
 
-Milestone 3 serves the handlers in `wildfirebot.tools` as an MCP server so an agent can call `forecast_smoke` and `pm25_to_aqi` over stdio. A map and an hourly chart should be a client of those tools (clusters, the back-trajectory, the score, and the monitors), not a second forecast. See `docs/roadmap.md` and `docs/methodology.md`.
+The MCP server is in place: an agent calls `forecast_smoke` and `pm25_to_aqi` over stdio or streamable HTTP. Milestone 2 is still the trained PM2.5 model. What remains of milestone 3 is a map and an hourly chart that call those same tools. See `docs/roadmap.md` and `docs/methodology.md`.
 
 ## How Grok Bot helped build it
 
@@ -114,3 +114,43 @@ pytest
 `--fixture-dir tests/fixtures/cli` replays recorded responses for development. It is not the default, and the banner says so. Do not commit raw downloads or `.env`.
 
 This is an estimate of relative smoke exposure from satellite detections and forecast wind. It is not a health advisory and not a substitute for AirNow or local guidance.
+
+## Use with your AI agent
+
+The MCP server is `wildfirebot-mcp`. After this branch is on `main`, no clone is required:
+
+```bash
+uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp
+```
+
+Stdio is the default. A Claude Desktop or Cursor config looks like this:
+
+```json
+{
+  "mcpServers": {
+    "wildfirebot": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/nycbagel/WildFireBot",
+        "wildfirebot-mcp"
+      ],
+      "env": {
+        "FIRMS_MAP_KEY": "your-firms-map-key",
+        "AIRNOW_API_KEY": "your-airnow-key",
+        "OPENAQ_API_KEY": "your-openaq-key"
+      }
+    }
+  }
+}
+```
+
+Open-Meteo needs no key. If a key is missing, the tool result says so under `notices` and `degraded` instead of crashing. Every forecast includes a disclaimer: the score is a relative exposure index, not an official AQI and not a health advisory.
+
+To host it at a URL, use streamable HTTP. The MCP endpoint is `http://127.0.0.1:8000/mcp`:
+
+```bash
+uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp -- --http --port 8000
+```
+
+`--host` defaults to `127.0.0.1`. The tools are `forecast_smoke` (`lat`, `lon`, `hours` default 48, `radius_km` default 250, `days` default 2, `lookback_hours` default 12) and `pm25_to_aqi` (`concentration`).

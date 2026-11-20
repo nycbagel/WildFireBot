@@ -25,10 +25,12 @@ Done in this tree.
 
 ## Milestone 3 — MCP server, then a map
 
-The service is an MCP server, not a separate forecast implementation. `list_tools` / `call_tool` in `wildfirebot.mcp` and `wildfirebot.tools` are the contract:
+The MCP server is done. `wildfirebot-mcp` speaks stdio by default and streamable HTTP with `--http`. It exposes the same handlers as the CLI:
 
-- `forecast_smoke` for a lat/lon and an hour window.
+- `forecast_smoke` for a lat/lon and an hour window, including degraded-mode notices.
 - `pm25_to_aqi` for the breakpoint conversion.
 - A later `predict_pm25` tool once milestone 2 has a model worth calling.
 
-The server should speak MCP over stdio, hold the FIRMS, AirNow, and OpenAQ keys in the process environment, and return the same JSON `forecast_smoke` already returns, including `degraded` and `notices`. A map and an hourly chart can be a second client of those tools: clusters, the back-trajectory, the score, and the monitor points. An HTTP route is only needed if a browser cannot speak MCP. It should call the same handlers.
+Keys stay in `FIRMS_MAP_KEY`, `AIRNOW_API_KEY`, and `OPENAQ_API_KEY`. A missing key is a notice, not a crash.
+
+Still open: a map and an hourly chart as another client of these tools (clusters, the back-trajectory, the score, and the monitor points). That view should call the tools, not a second forecast.
