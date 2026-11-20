@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: wildfirebot-mcp
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: FIRMS_MAP_KEY
+        sync: false
+      - key: AIRNOW_API_KEY
+        sync: false
+      - key: WFB_ACCESS_TOKEN
+        sync: false
+      - key: WFB_RATE_LIMIT
+        value: "60"

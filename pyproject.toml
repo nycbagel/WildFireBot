@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
     "mcp>=2.3",
     "pandas>=2.2",
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
