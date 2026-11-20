@@ -1,0 +1,5 @@
+.venv
+.env
+.token
+__pycache__
+*.egg-info
