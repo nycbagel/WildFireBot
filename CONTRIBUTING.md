@@ -1,6 +1,6 @@
 # Contributing
 
-WildFireBot is early. Milestone 1 is the data clients, the smoke-exposure score, and the CLI. The same forecast function is what a future MCP server will call.
+WildFireBot is early. Milestone 1 is the data clients, the smoke-exposure score, and the CLI. The same forecast function is what the MCP server (`wildfirebot-mcp`, live at https://wildfirebot.onrender.com/mcp) calls.
 
 ## Setup
 
@@ -30,7 +30,7 @@ Record a small fixture. Point a test at it with `ScriptedTransport` in `tests/su
 
 ## Adding behavior an agent should be able to call
 
-Put it in `src/wildfirebot/tools.py` as a tool with a JSON schema and a `call_tool` branch. The CLI and the milestone 3 MCP server both go through that module. Do not bury new forecast logic only in `cli.py`.
+Put it in `src/wildfirebot/tools.py` as a tool with a JSON schema and a `call_tool` branch. The CLI and the MCP server both go through that module. Do not bury new forecast logic only in `cli.py`.
 
 ## Secrets
 
