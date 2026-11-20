@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from wildfirebot.fires.cluster import Cluster
 from wildfirebot.geo import haversine_km, initial_bearing
@@ -52,6 +52,7 @@ class PlumeConfig:
     min_wind_m_s: float = 1.0
     max_fire_pm25: float = 500.0
     max_frp_mw: float = 3000.0
+    mixing_height_m: float | None = None
 
     def __post_init__(self) -> None:
         if self.stability not in STABILITY_CLASSES:
@@ -113,6 +114,8 @@ def plume_pm25(
         return 0.0
     cross = x * math.sin(math.radians(off_axis_deg))
     sigma_y, sigma_z = sigmas(along, cfg.stability)
+    if cfg.mixing_height_m is not None and cfg.mixing_height_m > 0:
+        sigma_z = min(sigma_z, cfg.mixing_height_m)
     grams = (
         emission
         / (math.pi * speed * sigma_y * sigma_z)
@@ -130,6 +133,7 @@ def fire_pm25_at(
     wind_m_s: float,
     horizon_hours: float,
     config: PlumeConfig | None = None,
+    terrain: list[dict | None] | None = None,
 ) -> tuple[float, list[FireContribution]]:
     """Sum smoke PM2.5 from every cluster for one wind state, capped.
 
@@ -148,7 +152,17 @@ def fire_pm25_at(
         arrival = arrival_hours(distance, wind_m_s, cfg)
         pm25 = 0.0
         if off_axis <= 2 * cfg.downwind_half_angle_deg and arrival <= horizon_hours:
-            pm25 = plume_pm25(cluster.frp_mw, distance, off_axis, wind_m_s, cfg)
+            adjust = terrain[index] if terrain and index < len(terrain) else None
+            if adjust:
+                local = replace(
+                    cfg,
+                    stability=adjust.get("stability_class", cfg.stability),
+                    mixing_height_m=adjust.get("mixing_height_m"),
+                )
+                pm25 = plume_pm25(cluster.frp_mw, distance, off_axis, wind_m_s, local)
+                pm25 *= float(adjust.get("blocking_factor", 1.0))
+            else:
+                pm25 = plume_pm25(cluster.frp_mw, distance, off_axis, wind_m_s, cfg)
         total += pm25
         parts.append(
             FireContribution(

@@ -89,6 +89,11 @@ TOOLS: list[dict] = [
                     "description": "Pasquill-Gifford stability class",
                 },
                 "plume_height_m": {"type": "number", "default": 200},
+                "terrain": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Adjust each fire for ridges, stability, and mixing height",
+                },
                 "emission_factor": {
                     "type": "number",
                     "default": 5.5,
@@ -293,6 +298,7 @@ def forecast_smoke_aqi(arguments: dict, runtime: Runtime | None = None) -> dict:
         data_mode=active.data_mode,
         horizons=horizons,
         config=config,
+        use_terrain=bool(arguments.get("terrain", True)) and active.data_mode == DATA_MODE_LIVE,
     )
     return aqi_report_to_dict(report)
 
@@ -379,6 +385,7 @@ def aqi_report_to_dict(report: AqiForecastReport) -> dict:
         "clusters": clusters[:10],
         "horizons": horizons,
         "observations": _observations(report.observations)[:5],
+        "terrain_notes": list(report.terrain_notes),
         "notices": list(report.notices),
     }
 

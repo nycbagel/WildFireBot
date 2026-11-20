@@ -16,6 +16,7 @@ from wildfirebot.fires.cluster import Cluster, cluster_hotspots
 from wildfirebot.geo import bbox_from_point
 from wildfirebot.model.aqi import pm25_to_aqi
 from wildfirebot.model.plume import DEFAULT_HORIZONS, FireContribution, PlumeConfig, fire_pm25_at
+from wildfirebot.model.terrain import terrain_adjustment
 from wildfirebot.pipeline import _observations
 from wildfirebot.sources.airnow import AirNowClient
 from wildfirebot.sources.base import TimeRange, floor_hour, optional_float
@@ -65,6 +66,7 @@ class AqiForecastReport:
     observations: pd.DataFrame
     notices: list[str] = field(default_factory=list)
     degraded: bool = False
+    terrain_notes: list[str] = field(default_factory=list)
     disclaimer: str = PLUME_DISCLAIMER
 
 
@@ -84,6 +86,8 @@ def build_aqi_forecast(
     data_mode: str,
     horizons: tuple[int, ...] | list[int] = DEFAULT_HORIZONS,
     config: PlumeConfig | None = None,
+    use_terrain: bool = True,
+    max_terrain_clusters: int = 5,
 ) -> AqiForecastReport:
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
@@ -130,6 +134,31 @@ def build_aqi_forecast(
     degraded = degraded or obs_degraded
     observed = _nearest_observed_pm25(observations)
 
+    terrain: list[dict | None] | None = None
+    terrain_notes: list[str] = []
+    if use_terrain and clusters:
+        nearest = sorted(
+            range(len(clusters)),
+            key=lambda i: (
+                (clusters[i].latitude - latitude) ** 2 + (clusters[i].longitude - longitude) ** 2
+            ),
+        )[:max_terrain_clusters]
+        terrain = [None] * len(clusters)
+        for index in nearest:
+            cluster = clusters[index]
+            adjust = terrain_adjustment(
+                cluster.latitude, cluster.longitude, latitude, longitude, cfg.plume_height_m
+            )
+            terrain[index] = adjust
+            terrain_notes.extend(
+                f"cluster {index} ({cluster.latitude:.3f}, {cluster.longitude:.3f}): {note}"
+                for note in adjust.get("notes", [])
+            )
+            terrain_notes.append(
+                f"cluster {index}: blocking {adjust['blocking_factor']}, class "
+                f"{adjust['stability_class']}, mixing height {adjust['mixing_height_m']:.0f} m"
+            )
+
     rows: list[HorizonForecast] = []
     no_wind = 0
     for hour in ordered:
@@ -146,7 +175,7 @@ def build_aqi_forecast(
             speed, direction = wind.transport_speed, wind.transport_direction
             assert speed is not None and direction is not None
             fire, parts = fire_pm25_at(
-                clusters, latitude, longitude, direction, speed, float(hour), cfg
+                clusters, latitude, longitude, direction, speed, float(hour), cfg, terrain
             )
             if wind.transport_source == "850hPa":
                 notes.append("used 850 hPa wind")
@@ -200,6 +229,7 @@ def build_aqi_forecast(
         observations=observations,
         notices=list(dict.fromkeys(note for note in notices if note)),
         degraded=degraded,
+        terrain_notes=terrain_notes,
     )
 
 
