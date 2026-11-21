@@ -34,6 +34,7 @@ class WindHour:
     transport_speed: float | None
     transport_direction: float | None
     transport_source: str
+    backfilled: bool = False  # 10 m wind copied back from the first forecast hour (estimate)
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,7 @@ def prepare_winds(frame: pd.DataFrame, *, max_gap_hours: int = 3) -> list[WindHo
                 transport_speed=transport_speed,
                 transport_direction=transport_direction,
                 transport_source=transport_source,
+                backfilled=bool(by_hour.get(hour, {}).get("wind_backfilled") is True),
             )
         )
     return prepared

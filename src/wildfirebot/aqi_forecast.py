@@ -17,7 +17,7 @@ from wildfirebot.geo import bbox_from_point
 from wildfirebot.model.aqi import pm25_to_aqi
 from wildfirebot.model.plume import DEFAULT_HORIZONS, FireContribution, PlumeConfig, fire_pm25_at
 from wildfirebot.model.terrain import terrain_adjustment
-from wildfirebot.pipeline import _observations
+from wildfirebot.pipeline import BACKFILL_NOTE, _observations
 from wildfirebot.sources.airnow import AirNowClient
 from wildfirebot.sources.base import DataSource, TimeRange, floor_hour, optional_float
 from wildfirebot.sources.firms import FirmsClient
@@ -181,6 +181,8 @@ def build_aqi_forecast(
             )
             if wind.transport_source == "850hPa":
                 notes.append("used 850 hPa wind")
+            if wind.backfilled:
+                notes.append(BACKFILL_NOTE)
         total = base + fire
         converted = pm25_to_aqi(total)
         rows.append(

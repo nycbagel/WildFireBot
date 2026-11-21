@@ -39,9 +39,15 @@ METNO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
 # a 5xx is worth another try; a 429 means "slow down", so it is not retried
 METNO_RETRY_STATUSES = frozenset({500, 502, 503, 504})
 THROTTLE_PAUSE = timedelta(minutes=10)
+# MET Norway frames carry one extra column, True on hours copied back from the first
+# forecast hour. Open-Meteo frames lack it, which readers treat as False.
+BACKFILLED_COLUMN = "wind_backfilled"
+METNO_COLUMNS = [*WIND_COLUMNS, BACKFILLED_COLUMN]
 
 # The MCP server builds a new client for every tool call, so the pause after a 429 is
-# kept for the whole process, not on one client.
+# kept for the whole process, not on one client. It is per process only: it is not
+# shared between instances or workers, so each one learns of a 429 on its own and may
+# send MET Norway one more request before pausing.
 _pause_lock = threading.Lock()
 _paused_until: datetime | None = None
 
@@ -108,11 +114,12 @@ def parse_metno(payload: dict) -> tuple[pd.DataFrame, list[str]]:
                 "wind_speed_850hPa": None,
                 "wind_direction_850hPa": None,
                 "boundary_layer_height": None,
+                BACKFILLED_COLUMN: False,
             }
         )
     if not rows:
         return empty_winds(), notices
-    frame = pd.DataFrame(rows, columns=WIND_COLUMNS)
+    frame = pd.DataFrame(rows, columns=METNO_COLUMNS)
     frame["time"] = pd.to_datetime(frame["time"], utc=True)
     return frame, notices
 
@@ -231,8 +238,9 @@ def _hold_first_wind_back(
             "wind_speed_850hPa": None,
             "wind_direction_850hPa": None,
             "boundary_layer_height": None,
+            BACKFILLED_COLUMN: True,
         },
-        columns=WIND_COLUMNS,
+        columns=METNO_COLUMNS,
     )
     merged = pd.concat([earlier, frame], ignore_index=True)
     return merged, len(earlier), first.to_pydatetime()

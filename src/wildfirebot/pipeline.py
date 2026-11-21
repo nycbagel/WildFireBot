@@ -23,6 +23,8 @@ from wildfirebot.transport.score import (
 )
 from wildfirebot.transport.winds import WindHour, WindSummary, prepare_winds, summarize_winds
 
+BACKFILL_NOTE = "wind estimated: earlier hours copied from the backup feed's first hour"
+
 
 @dataclass(frozen=True)
 class HourScore:
@@ -197,6 +199,8 @@ def _score_hour(
         if sample.interpolated_10m or sample.interpolated_blh:
             notes.append("wind interpolated")
             flags["interpolated"] = True
+        if sample.backfilled:
+            notes.append(BACKFILL_NOTE)
         if sample.transport_source == "850hPa":
             notes.append("used 850 hPa wind")
             flags["substituted"] = True
@@ -218,6 +222,7 @@ def _score_hour(
     steps: list[tuple[float, float]] = []
     arrival: WindHour | None = None
     shortened = False
+    backfilled = False
     for lag in range(lookback_hours):
         sample = wind_by_time.get(moment - timedelta(hours=lag))
         if sample is None or sample.transport_source == "missing" or sample.transport_speed is None:
@@ -235,6 +240,7 @@ def _score_hour(
             flags["interpolated"] = True
         if sample.transport_source == "850hPa":
             flags["substituted"] = True
+        backfilled = backfilled or sample.backfilled
         direction = sample.transport_direction
         speed = sample.transport_speed
         assert direction is not None and speed is not None
@@ -244,6 +250,8 @@ def _score_hour(
         notes.append("wind interpolated")
     if flags["substituted"]:
         notes.append("used 850 hPa wind")
+    if backfilled:
+        notes.append(BACKFILL_NOTE)
     if shortened:
         notes.append("back-trajectory shortened by a wind gap")
     blh = None if arrival is None else arrival.blh_m
