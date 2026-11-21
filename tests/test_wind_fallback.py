@@ -12,13 +12,14 @@ from tests.support import ScriptedTransport
 from wildfirebot.aqi_forecast import build_aqi_forecast
 from wildfirebot.geo import BBox, destination
 from wildfirebot.http import FileCache, HttpClient, HttpResponse, TransportError, decode_body
-from wildfirebot.pipeline import build_report
+from wildfirebot.pipeline import BACKFILL_NOTE, build_report
 from wildfirebot.sources import metno
 from wildfirebot.sources.base import SourceResult, TimeRange
 from wildfirebot.sources.metno import MetNorwayClient, build_metno_url, parse_metno
 from wildfirebot.sources.openmeteo import WIND_OMITTED, OpenMeteoClient
 from wildfirebot.sources.wind_fallback import BACKUP_NOTE, FallbackWindClient
 from wildfirebot.tools import build_runtime
+from wildfirebot.transport.winds import prepare_winds
 
 ROOT = Path(__file__).parent / "fixtures"
 METNO = (ROOT / "metno_compact.json").read_text()
@@ -215,6 +216,49 @@ def test_backup_holds_its_first_wind_back_over_the_lookback():
     assert held["wind_direction_10m"].tolist() == pytest.approx([76.6] * 11)
     assert held["boundary_layer_height"].isna().all()
     assert any("11 hour(s)" in note and "05:00 UTC" in note for note in result.notices)
+    assert result.data["wind_backfilled"].tolist() == [True] * 11 + [False] * 6
+    prepared = prepare_winds(result.data)
+    assert [hour.backfilled for hour in prepared] == [True] * 11 + [False] * 6
+
+
+def test_open_meteo_wind_is_never_marked_backfilled():
+    open_meteo = _steady_open_meteo(datetime(2026, 11, 20, tzinfo=UTC), 96, 5.0, 270.0)
+    frame = (
+        OpenMeteoClient(
+            _http(ScriptedTransport().when("api.open-meteo.com", 200, open_meteo)), now=NOW
+        )
+        .fetch(BOX, WINDOW)
+        .data
+    )
+    assert "wind_backfilled" not in frame.columns
+    assert not any(hour.backfilled for hour in prepare_winds(frame))
+
+
+def test_scores_that_lean_on_backfilled_wind_say_so_and_others_do_not():
+    now = datetime(2026, 11, 21, 6, 23, tzinfo=UTC)
+    firms = OneFire(now, bearing=270.0, distance_km=150.0)
+    transport = ScriptedTransport().when("api.open-meteo.com", 429, "limit")
+    transport.when(
+        "api.met.no", 200, _steady_metno(datetime(2026, 11, 21, 6, tzinfo=UTC), 60, 5.0, 270.0)
+    )
+    report = build_report(
+        latitude=LAT,
+        longitude=LON,
+        hours=12,
+        radius_km=250,
+        detection_days=2,
+        cluster_km=3,
+        lookback_hours=12,
+        now=now,
+        firms=firms,
+        weather=_wind(_http(transport, now), now),
+        airnow=None,
+        openaq=None,
+        data_mode="test",
+    )
+    assert any(BACKFILL_NOTE in note for note in report.hourly[0].notes)
+    # the 12-hour look-back of the last hour starts after the held hours
+    assert not any(BACKFILL_NOTE in note for note in report.hourly[11].notes)
 
 
 def test_hourly_score_with_the_backup_matches_open_meteo_under_steady_wind():
@@ -337,3 +381,13 @@ def test_requests_accept_gzip_and_bodies_are_decoded():
         decode_body(b"not gzip", {"content-encoding": "gzip"})
     with pytest.raises(TransportError):
         decode_body(body, {"content-encoding": "br"})
+
+
+def test_user_agent_names_the_app_and_links_the_repository():
+    from wildfirebot.http import USER_AGENT
+
+    assert USER_AGENT.startswith("WildFireBot/")
+    assert "https://github.com/nycbagel/WildFireBot" in USER_AGENT  # MET Norway wants a contact
+    transport = HeaderTransport({"api.met.no": (200, METNO, {})})
+    MetNorwayClient(_http(transport)).fetch(BOX, WINDOW)
+    assert "github.com/nycbagel/WildFireBot" in transport.headers[0]["User-Agent"]
