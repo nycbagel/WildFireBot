@@ -31,7 +31,7 @@ Python 3.11+ package `wildfirebot`, installable with `pyproject.toml`. Console s
 
 The package is split the way later milestones need it:
 
-- `sources/` — FIRMS, Open-Meteo (wind and background PM2.5), AirNow, OpenAQ. Each one implements `fetch(bbox, time_range) -> SourceResult`.
+- `sources/` — FIRMS, Open-Meteo (wind and background PM2.5), MET Norway (backup wind), AirNow, OpenAQ. Each one implements `fetch(bbox, time_range) -> SourceResult`.
 - `fires/` — drop low-confidence and invalid hotspots, then cluster the rest by distance and FRP.
 - `transport/` — fill short wind gaps, walk a back-trajectory, compute the score.
 - `model/` — the EPA PM2.5-to-AQI conversion and the Gaussian plume (`model/plume.py`). The trained model is still a stub.
@@ -44,6 +44,7 @@ Data sources, and the terms they ask users to keep:
 - AirNow: monitor observations. https://www.airnow.gov/
 - OpenAQ: open air-quality measurements. https://openaq.org/
 - Open-Meteo: forecast wind and boundary-layer height. https://open-meteo.com/
+- MET Norway Locationforecast: the backup 10 m wind forecast, used only when Open-Meteo has no wind. No key. Data from MET Norway under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); WildFireBot uses only the 10 m wind, holds the first forecast hour steady for the hours before it, and fills short gaps, and every answer that uses it says so. MET Norway's terms (https://docs.api.met.no/doc/TermsOfService) must be read and accepted by a person before using the service, so anyone who runs their own copy has to do that first. To keep them, WildFireBot sends a User-Agent that names the app and links here, accepts gzip, rounds coordinates to 4 decimals, keeps each answer for 60 minutes (longer than its Expires time) even when asked to refresh, and after a 429 stops asking for at least 10 minutes. https://api.met.no/
 
 ## Challenges we ran into
 
@@ -364,6 +365,8 @@ Claude Code adds that URL with `claude mcp add --transport http wildfirebot http
 The live instance at `https://wildfirebot.onrender.com/mcp` is deployed on Render as a Docker web service. Both the Blueprint path and the plain Web Service path (language Docker, health check path `/health`) work. `WFB_ACCESS_TOKEN` is optional, and the public instance currently runs without it, so it is open with only the rate limit.
 
 Run the MCP server once with the operator's keys, and everyone else connects by URL. The keys stay in the host's environment and are never sent to clients.
+
+Render's free tier shares its outbound addresses between apps, so Open-Meteo's free per-address limit can run out because of other apps, and then every Open-Meteo request returns HTTP 429. When that happens the wind comes from MET Norway instead, and the answer says so. The terrain and air-stability lookups and the AQI's background PM2.5 forecast still use Open-Meteo. If those are refused, the AQI forecast assumes no ridge and neutral air, and takes the background from the nearest monitor's PM2.5, or 8 µg/m³ when no monitor answers. The notices say which lookups failed, and each horizon's `baseline_source` names the background it used.
 
 **Environment variables**
 

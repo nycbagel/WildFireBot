@@ -12,10 +12,9 @@ from wildfirebot.fires.cluster import Cluster, cluster_hotspots
 from wildfirebot.geo import bbox_from_point, haversine_km
 from wildfirebot.model.aqi import category_for_aqi, pm25_to_aqi
 from wildfirebot.sources.airnow import AirNowClient, empty_observations
-from wildfirebot.sources.base import TimeRange, floor_hour, optional_float
+from wildfirebot.sources.base import DataSource, TimeRange, floor_hour, optional_float
 from wildfirebot.sources.firms import FirmsClient
 from wildfirebot.sources.openaq import OpenAQClient
-from wildfirebot.sources.openmeteo import OpenMeteoClient
 from wildfirebot.transport.score import (
     ScoreConfig,
     exposure_label,
@@ -66,7 +65,7 @@ def build_report(
     lookback_hours: int,
     now: datetime,
     firms: FirmsClient,
-    weather: OpenMeteoClient,
+    weather: DataSource,
     airnow: AirNowClient | None,
     openaq: OpenAQClient | None,
     data_mode: str,

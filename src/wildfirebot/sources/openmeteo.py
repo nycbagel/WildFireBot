@@ -34,6 +34,7 @@ WIND_COLUMNS = [
     "wind_direction_850hPa",
     "boundary_layer_height",
 ]
+WIND_OMITTED = "Smoke scores that need wind are omitted."
 
 
 def build_openmeteo_url(
@@ -139,10 +140,7 @@ class OpenMeteoClient:
         except HttpError as exc:
             return SourceResult(
                 data=empty_winds(),
-                notices=[
-                    f"Open-Meteo wind forecast is unavailable ({exc}). "
-                    "Smoke scores that need wind are omitted."
-                ],
+                notices=[f"Open-Meteo wind forecast is unavailable ({exc}). {WIND_OMITTED}"],
                 degraded=True,
                 sources_failed=["open-meteo"],
             )

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import re
 import time
 import urllib.error
 import urllib.request
+import zlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -134,13 +136,38 @@ class UrllibTransport:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 header_map = {key.lower(): value for key, value in response.headers.items()}
-                return HttpResponse(response.status, response.read(), header_map)
+                status, body = response.status, response.read()
         except urllib.error.HTTPError as exc:
             header_map = {key.lower(): value for key, value in exc.headers.items()}
-            return HttpResponse(exc.code, exc.read(), header_map)
+            body = exc.read()
+            try:
+                body = decode_body(body, header_map)
+            except TransportError:
+                pass  # an error body only feeds the excerpt; keep the status for the retry logic
+            return HttpResponse(exc.code, body, header_map)
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             reason = getattr(exc, "reason", exc)
             raise TransportError(str(reason)) from exc
+        return HttpResponse(status, decode_body(body, header_map), header_map)
+
+
+def decode_body(body: bytes, headers: Mapping[str, str]) -> bytes:
+    """Undo Content-Encoding. urllib asks for nothing by itself, so this only runs when
+    HttpClient asked for gzip or deflate."""
+    encoding = headers.get("content-encoding", "").strip().lower()
+    if encoding in ("", "identity"):
+        return body
+    try:
+        if encoding in ("gzip", "x-gzip"):
+            return gzip.decompress(body)
+        if encoding == "deflate":
+            try:
+                return zlib.decompress(body)
+            except zlib.error:
+                return zlib.decompress(body, -zlib.MAX_WBITS)  # raw deflate, no zlib header
+    except (OSError, EOFError, zlib.error) as exc:
+        raise TransportError(f"could not decompress a {encoding} body ({exc})") from exc
+    raise TransportError(f"unsupported content encoding {encoding}")
 
 
 class FixtureTransport:
@@ -163,6 +190,8 @@ class FixtureTransport:
                 if f"/{source}/" in url:
                     return self.root / "firms" / f"{source}.csv"
             return None
+        if "api.met.no" in url:
+            return self.root / "metno.json"
         if "air-quality-api.open-meteo.com" in url:
             return self.root / "openmeteo_air_quality.json"
         if "api.open-meteo.com" in url:
@@ -213,6 +242,7 @@ class HttpClient:
         ttl: timedelta,
         refresh: bool = False,
         accept: Callable[[str], bool] | None = None,
+        retry_statuses: frozenset[int] = RETRY_STATUSES,
     ) -> HttpText:
         """Return a response body, from the live feed or from cache.
 
@@ -228,7 +258,7 @@ class HttpClient:
                 return HttpText(body, True, False, stored_at, url)
 
         try:
-            text = self._fetch(url, headers or {})
+            text = self._fetch(url, headers or {}, retry_statuses)
         except HttpError:
             if cached is not None and accept_fn(cached[0]):
                 return HttpText(cached[0], True, True, cached[1], url)
@@ -249,10 +279,16 @@ class HttpClient:
             self.cache.put(url, text, stored_at=self.clock())
         return HttpText(text, False, False, self.clock(), url)
 
-    def _fetch(self, url: str, headers: Mapping[str, str]) -> str:
+    def _fetch(
+        self,
+        url: str,
+        headers: Mapping[str, str],
+        retry_statuses: frozenset[int] = RETRY_STATUSES,
+    ) -> str:
         request_headers = {
             "User-Agent": self.user_agent,
             "Accept": "application/json, text/csv, text/plain, */*",
+            "Accept-Encoding": "gzip, deflate",
         }
         request_headers.update(headers)
         last_error: HttpError | None = None
@@ -277,7 +313,7 @@ class HttpClient:
                     body_excerpt=str(exc),
                 )
                 continue
-            if response.status in RETRY_STATUSES:
+            if response.status in retry_statuses:
                 last_error = HttpError(
                     f"HTTP {response.status} from {redact_url(url)}",
                     status=response.status,
@@ -290,6 +326,7 @@ class HttpClient:
                     f"HTTP {response.status} from {redact_url(url)}",
                     status=response.status,
                     body_excerpt=_excerpt(response.body),
+                    retry_after=_retry_after(response.headers),
                 )
             return response.body.decode("utf-8-sig", errors="replace")
         assert last_error is not None
