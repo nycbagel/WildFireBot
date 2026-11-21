@@ -21,3 +21,6 @@ raw/
 *.nc
 .DS_Store
 .token
+
+# X bot state
+.xbot_state.json*

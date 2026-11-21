@@ -360,6 +360,10 @@ uvx --from git+https://github.com/nycbagel/WildFireBot wildfirebot-mcp --http --
 
 Claude Code adds that URL with `claude mcp add --transport http wildfirebot https://your-host.example/mcp`. Codex adds it with `codex mcp add wildfirebot --url https://your-host.example/mcp`, or with `url = "https://your-host.example/mcp"` under `[mcp_servers.wildfirebot]` instead of `command` and `args`.
 
+## X mention bot
+
+An opt-in bot for X that answers only when someone @mentions it, for example under a post about a trip ("excited for my trip to Yosemite in 2 days"). It reads the place and dates, runs the smoke forecast, and replies in under 280 characters: a heads-up when the forecast AQI reaches 101 or an active fire is within 50 km, a short all-clear otherwise. It never searches for keywords or replies unasked, and it is a dry run until `WFB_X_DRY_RUN=0`. Try it with no X account: `python -m wildfirebot.xbot --text "@YourBot Yosemite this weekend?"`. Setup, X API costs, environment variables and hosting are in [docs/x-bot.md](docs/x-bot.md).
+
 ## Hosted server (no API keys for users)
 
 The live instance at `https://wildfirebot.onrender.com/mcp` is deployed on Render as a Docker web service. Both the Blueprint path and the plain Web Service path (language Docker, health check path `/health`) work. `WFB_ACCESS_TOKEN` is optional, and the public instance currently runs without it, so it is open with only the rate limit.
