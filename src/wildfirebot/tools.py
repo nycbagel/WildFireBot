@@ -20,10 +20,13 @@ from wildfirebot.model.aqi import pm25_to_aqi
 from wildfirebot.model.plume import DEFAULT_HORIZONS, STABILITY_CLASSES, PlumeConfig
 from wildfirebot.pipeline import ForecastReport, build_report
 from wildfirebot.sources.airnow import AirNowClient
+from wildfirebot.sources.base import DataSource
 from wildfirebot.sources.firms import DEFAULT_SOURCES, KNOWN_SOURCES, FirmsClient, parse_sources
+from wildfirebot.sources.metno import MetNorwayClient
 from wildfirebot.sources.openaq import OpenAQClient
 from wildfirebot.sources.openmeteo import OpenMeteoClient
 from wildfirebot.sources.openmeteo_aq import OpenMeteoAirQualityClient
+from wildfirebot.sources.wind_fallback import FallbackWindClient
 
 DATA_MODE_LIVE = "live"
 DATA_MODE_FIXTURES = "fixtures (not live)"
@@ -131,7 +134,7 @@ class Runtime:
 
     http: HttpClient
     firms: FirmsClient
-    weather: OpenMeteoClient
+    weather: DataSource
     airnow: AirNowClient
     openaq: OpenAQClient
     data_mode: str
@@ -178,7 +181,10 @@ def build_runtime(
             min_modis_confidence=min_confidence,
             refresh=refresh,
         ),
-        weather=OpenMeteoClient(http, refresh=refresh, now=moment),
+        weather=FallbackWindClient(
+            OpenMeteoClient(http, refresh=refresh, now=moment),
+            MetNorwayClient(http, now=moment),
+        ),
         airnow=AirNowClient(os.environ.get("AIRNOW_API_KEY", ""), http, refresh=refresh),
         openaq=OpenAQClient(os.environ.get("OPENAQ_API_KEY", ""), http, refresh=refresh),
         data_mode=data_mode,

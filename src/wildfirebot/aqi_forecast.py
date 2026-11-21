@@ -19,10 +19,9 @@ from wildfirebot.model.plume import DEFAULT_HORIZONS, FireContribution, PlumeCon
 from wildfirebot.model.terrain import terrain_adjustment
 from wildfirebot.pipeline import _observations
 from wildfirebot.sources.airnow import AirNowClient
-from wildfirebot.sources.base import TimeRange, floor_hour, optional_float
+from wildfirebot.sources.base import DataSource, TimeRange, floor_hour, optional_float
 from wildfirebot.sources.firms import FirmsClient
 from wildfirebot.sources.openaq import OpenAQClient
-from wildfirebot.sources.openmeteo import OpenMeteoClient
 from wildfirebot.sources.openmeteo_aq import OpenMeteoAirQualityClient
 from wildfirebot.transport.winds import WindHour, prepare_winds
 
@@ -79,7 +78,7 @@ def build_aqi_forecast(
     cluster_km: float,
     now: datetime,
     firms: FirmsClient,
-    weather: OpenMeteoClient,
+    weather: DataSource,
     air_quality: OpenMeteoAirQualityClient | None,
     airnow: AirNowClient | None,
     openaq: OpenAQClient | None,
@@ -110,7 +109,10 @@ def build_aqi_forecast(
     clusters = cluster_hotspots(fires.data, cluster_km) if fires.sources_used else []
 
     forecast_range = TimeRange(origin, origin + timedelta(hours=max(last, 1)))
-    winds = weather.fetch(bbox, forecast_range)
+    # the nearest wind may lie up to MAX_WIND_OFFSET_HOURS after the last horizon; the
+    # backup feed is six-hourly past about +60 h, so ask for wind that far ahead too
+    wind_range = TimeRange(origin, origin + timedelta(hours=last + MAX_WIND_OFFSET_HOURS))
+    winds = weather.fetch(bbox, wind_range)
     notices.extend(winds.notices)
     degraded = degraded or winds.degraded
     prepared = prepare_winds(winds.data) if not winds.data.empty else []
