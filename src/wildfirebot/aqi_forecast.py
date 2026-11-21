@@ -15,7 +15,14 @@ import pandas as pd
 from wildfirebot.fires.cluster import Cluster, cluster_hotspots
 from wildfirebot.geo import bbox_from_point
 from wildfirebot.model.aqi import pm25_to_aqi
-from wildfirebot.model.plume import DEFAULT_HORIZONS, FireContribution, PlumeConfig, fire_pm25_at
+from wildfirebot.model.plume import (
+    DEFAULT_HORIZONS,
+    STABLE_AIR_NOTE,
+    FireContribution,
+    PlumeConfig,
+    fire_pm25_at,
+    stable_air_suppressed,
+)
 from wildfirebot.model.terrain import terrain_adjustment
 from wildfirebot.pipeline import BACKFILL_NOTE, _observations
 from wildfirebot.sources.airnow import AirNowClient
@@ -183,6 +190,8 @@ def build_aqi_forecast(
                 notes.append("used 850 hPa wind")
             if wind.backfilled:
                 notes.append(BACKFILL_NOTE)
+            if stable_air_suppressed(clusters, parts, speed, float(hour), cfg, terrain):
+                notes.append(STABLE_AIR_NOTE)
         total = base + fire
         converted = pm25_to_aqi(total)
         rows.append(

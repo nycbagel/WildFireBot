@@ -176,3 +176,53 @@ def fire_pm25_at(
             )
         )
     return min(total, cfg.max_fire_pm25), parts
+
+
+STABLE_AIR_NOTE = (
+    "stable night air keeps the smoke plume aloft; fire PM2.5 here may be underestimated, "
+    "as smoke can pool in valleys at night"
+)
+STABLE_CLASSES = ("E", "F")
+
+
+def stable_air_suppressed(
+    clusters: list[Cluster],
+    parts: list[FireContribution],
+    wind_m_s: float,
+    horizon_hours: float,
+    config: PlumeConfig,
+    terrain: list[dict | None] | None,
+    *,
+    min_neutral_pm25: float = 1.0,
+    suppression_ratio: float = 0.5,
+) -> bool:
+    """True when stable air (class E or F) hid smoke from a fire that is reaching the target.
+
+    A cluster counts when it passed the downwind and arrival checks, its terrain
+    adjustment says class E or F, and the same plume in neutral air (class D, same
+    mixing height and ridge blocking) would add at least `min_neutral_pm25` µg/m³ while
+    the modelled value is under `suppression_ratio` of that. With no downwind fire in
+    reach, or in neutral air, nothing is flagged.
+    """
+    for part in parts:
+        adjust = (
+            terrain[part.cluster_index] if terrain and part.cluster_index < len(terrain) else None
+        )
+        if not adjust or adjust.get("stability_class") not in STABLE_CLASSES:
+            continue
+        if (
+            part.off_axis_deg > 2 * config.downwind_half_angle_deg
+            or part.arrival_hours > horizon_hours
+        ):
+            continue
+        neutral = replace(config, stability="D", mixing_height_m=adjust.get("mixing_height_m"))
+        reference = plume_pm25(
+            clusters[part.cluster_index].frp_mw,
+            part.distance_km,
+            part.off_axis_deg,
+            wind_m_s,
+            neutral,
+        ) * float(adjust.get("blocking_factor", 1.0))
+        if reference >= min_neutral_pm25 and part.pm25 < suppression_ratio * reference:
+            return True
+    return False
