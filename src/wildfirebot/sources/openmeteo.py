@@ -47,9 +47,12 @@ def build_openmeteo_url(
     past_days = 1
     if time_range.start < current:
         past_days = max(1, math.ceil((current - time_range.start).total_seconds() / 86400))
+    # forecast_days counts calendar days in UTC, starting with today, not 24-hour blocks
+    # from now: at 06:00, +48 h falls on the third day, which ceil(48 / 24) = 2 would cut off.
     forecast_days = 1
     if time_range.end > current:
-        forecast_days = max(1, math.ceil((time_range.end - current).total_seconds() / 86400))
+        today = current.astimezone(UTC).date()
+        forecast_days = max(1, (time_range.end.astimezone(UTC).date() - today).days + 1)
     params = {
         "latitude": f"{latitude:.4f}",
         "longitude": f"{longitude:.4f}",

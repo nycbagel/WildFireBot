@@ -16,6 +16,10 @@ from typing import Protocol
 
 USER_AGENT = "WildFireBot/0.1 (educational smoke-exposure forecast; +https://github.com/nycbagel/WildFireBot)"
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+# Total time one request may spend waiting between retries. A Retry-After beyond it
+# (an hourly or daily quota) cannot clear in time, so the request fails at once and the
+# caller falls back to a stale cache entry or reports the feed as down.
+MAX_RETRY_WAIT_SECONDS = 30.0
 
 
 @dataclass
@@ -252,13 +256,19 @@ class HttpClient:
         }
         request_headers.update(headers)
         last_error: HttpError | None = None
+        attempts = 0
+        waited = 0.0
         for attempt in range(self.max_attempts):
             if attempt and last_error is not None:
                 delay = self.backoff_seconds * (2 ** (attempt - 1))
                 if last_error.retry_after is not None:
-                    delay = min(max(delay, last_error.retry_after), 30.0)
+                    if waited + last_error.retry_after > MAX_RETRY_WAIT_SECONDS:
+                        break
+                    delay = max(delay, last_error.retry_after)
                 if delay > 0:
                     self.sleep(delay)
+                    waited += delay
+            attempts += 1
             try:
                 response = self.transport.request(url, request_headers)
             except TransportError as exc:
@@ -284,7 +294,7 @@ class HttpClient:
             return response.body.decode("utf-8-sig", errors="replace")
         assert last_error is not None
         raise HttpError(
-            f"{last_error} after {self.max_attempts} attempts",
+            f"{last_error} after {attempts} attempt{'' if attempts == 1 else 's'}",
             status=last_error.status,
             body_excerpt=last_error.body_excerpt,
             retry_after=last_error.retry_after,

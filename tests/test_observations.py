@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -109,3 +110,21 @@ def test_missing_observation_keys_are_degraded_and_offline():
 
 def _http(transport):
     return HttpClient(transport, max_attempts=2, backoff_seconds=0, sleep=lambda _d: None)
+
+
+@pytest.mark.parametrize(
+    ("now", "hours", "days"),
+    [
+        (datetime(2026, 11, 21, 5, 55, tzinfo=UTC), 48, "3"),
+        (datetime(2026, 11, 21, 0, 0, tzinfo=UTC), 48, "3"),
+        (datetime(2026, 11, 21, 23, 30, tzinfo=UTC), 48, "3"),
+        (datetime(2026, 11, 21, 5, 55, tzinfo=UTC), 12, "1"),
+        (datetime(2026, 11, 21, 20, 0, tzinfo=UTC), 12, "2"),
+    ],
+)
+def test_openmeteo_asks_for_every_calendar_day_the_horizon_touches(now, hours, days):
+    # Open-Meteo counts forecast_days as calendar days in UTC, starting today
+    origin = now.replace(minute=0)
+    window = TimeRange(origin, origin + timedelta(hours=hours))
+    query = parse_qs(urlparse(build_openmeteo_url(37.75, -119.59, window, now=now)).query)
+    assert query["forecast_days"] == [days]
