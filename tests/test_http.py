@@ -3,7 +3,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from tests.support import ScriptedTransport
-from wildfirebot.http import FileCache, HttpClient, HttpError, TransportError, redact_url
+from wildfirebot.http import (
+    FileCache,
+    HttpClient,
+    HttpError,
+    HttpResponse,
+    TransportError,
+    redact_url,
+)
 
 NOW = datetime(2026, 11, 19, 20, tzinfo=UTC)
 
@@ -110,3 +117,60 @@ def _path():
     from pathlib import Path
 
     return Path(tempfile.mkdtemp())
+
+
+class QuotaTransport:
+    """Answer HTTP 429 with a Retry-After header, the way a spent quota does."""
+
+    def __init__(self, retry_after):
+        self.retry_after = retry_after
+        self.calls = []
+
+    def request(self, url, headers):
+        del headers
+        self.calls.append(url)
+        return HttpResponse(429, b"limit exceeded", {"retry-after": str(self.retry_after)})
+
+
+def _quota_client(transport, tmp_path, slept):
+    return HttpClient(
+        transport,
+        cache=FileCache(tmp_path),
+        max_attempts=3,
+        backoff_seconds=0.5,
+        sleep=slept.append,
+        clock=lambda: NOW,
+    )
+
+
+def test_a_quota_retry_after_fails_at_once_and_serves_the_stale_cache(tmp_path):
+    url = "https://api.open-meteo.com/v1/forecast?latitude=37.7500"
+    transport, slept = QuotaTransport(3600), []
+    client = _quota_client(transport, tmp_path, slept)
+    client.cache.put(url, "cached-body", stored_at=NOW - timedelta(hours=2))
+    text = client.get_text(url, ttl=timedelta(minutes=60))
+    assert text.stale is True
+    assert text.text == "cached-body"
+    assert len(transport.calls) == 1
+    assert slept == []
+
+
+def test_a_quota_retry_after_without_a_cache_reports_one_attempt(tmp_path):
+    transport, slept = QuotaTransport(3600), []
+    client = _quota_client(transport, tmp_path, slept)
+    with pytest.raises(HttpError) as caught:
+        client.get_text("https://api.open-meteo.com/v1/forecast", ttl=timedelta(minutes=60))
+    assert caught.value.status == 429
+    assert caught.value.retry_after == 3600
+    assert str(caught.value).endswith("after 1 attempt")
+    assert slept == []
+
+
+def test_a_short_retry_after_is_honoured_within_the_wait_budget(tmp_path):
+    transport, slept = QuotaTransport(2), []
+    client = _quota_client(transport, tmp_path, slept)
+    with pytest.raises(HttpError) as caught:
+        client.get_text("https://api.open-meteo.com/v1/forecast", ttl=timedelta(minutes=60))
+    assert slept == [2.0, 2.0]
+    assert len(transport.calls) == 3
+    assert str(caught.value).endswith("after 3 attempts")
