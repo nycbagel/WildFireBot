@@ -232,3 +232,89 @@ def _keys(monkeypatch):
     monkeypatch.setenv("AIRNOW_API_KEY", "test-airnow-key")
     monkeypatch.setenv("OPENAQ_API_KEY", "test-openaq-key")
     monkeypatch.setenv("WILDFIREBOT_BACKOFF_SECONDS", "0")
+
+
+def test_stable_air_note_for_the_62_mw_fire_in_class_f():
+    from wildfirebot.model.plume import STABLE_AIR_NOTE, stable_air_suppressed
+
+    cluster = Cluster(
+        latitude=36.146,
+        longitude=-118.502,
+        frp_mw=62.3,
+        count=5,
+        sources=("VIIRS",),
+        processing_levels=("NRT",),
+        first_seen=datetime(2026, 11, 20, 20, tzinfo=UTC),
+        last_seen=datetime(2026, 11, 20, 20, 53, tzinfo=UTC),
+        satellites=("N21",),
+    )
+    target = (36.10, -118.47)  # 5.9 km SSE of the fire, so the wind blows from NNW
+    cfg = PlumeConfig()
+    stable = [{"blocking_factor": 0.39, "stability_class": "F", "mixing_height_m": 345.0}]
+    neutral = [{"blocking_factor": 0.39, "stability_class": "D", "mixing_height_m": 345.0}]
+    wind_from = 330.0
+    fire, parts = fire_pm25_at([cluster], *target, wind_from, 4.0, 6.0, cfg, stable)
+    assert fire < 0.01
+    assert parts[0].downwind
+    assert stable_air_suppressed([cluster], parts, 4.0, 6.0, cfg, stable)
+    assert "may be underestimated" in STABLE_AIR_NOTE
+    # same fire in neutral air: real smoke, no note
+    fire_d, parts_d = fire_pm25_at([cluster], *target, wind_from, 4.0, 6.0, cfg, neutral)
+    assert fire_d > 20
+    assert not stable_air_suppressed([cluster], parts_d, 4.0, 6.0, cfg, neutral)
+    # stable air but no terrain info, or the fire is upwind or too far to arrive: no note
+    assert not stable_air_suppressed([cluster], parts, 4.0, 6.0, cfg, None)
+    _, away = fire_pm25_at([cluster], *target, 150.0, 4.0, 6.0, cfg, stable)
+    assert not stable_air_suppressed([cluster], away, 4.0, 6.0, cfg, stable)
+    _, early = fire_pm25_at([cluster], *target, wind_from, 4.0, 0.1, cfg, stable)
+    assert not stable_air_suppressed([cluster], early, 4.0, 0.1, cfg, stable)
+
+
+def test_horizon_rows_carry_the_stable_air_note_only_near_a_downwind_fire(monkeypatch):
+    from datetime import timedelta
+
+    import wildfirebot.aqi_forecast as module
+    from tests.support import ScriptedTransport
+    from tests.test_wind_fallback import LAT, LON, OneFire, _http, _steady_open_meteo
+    from tests.test_wind_fallback import NOW as WNOW
+    from wildfirebot.aqi_forecast import build_aqi_forecast
+    from wildfirebot.model.plume import STABLE_AIR_NOTE
+    from wildfirebot.sources.openmeteo import OpenMeteoClient
+
+    def run(bearing, stability):
+        monkeypatch.setattr(
+            module,
+            "terrain_adjustment",
+            lambda *a, **k: {
+                "blocking_factor": 1.0,
+                "stability_class": stability,
+                "mixing_height_m": 345.0,
+                "notes": [],
+            },
+        )
+        # wind from the west at 4 m/s; a fire 6 km west is upwind of the target
+        wind = _steady_open_meteo(WNOW - timedelta(days=1), 120, 4.0, 270.0)
+        transport = ScriptedTransport().when("api.open-meteo.com", 200, wind)
+        return build_aqi_forecast(
+            latitude=LAT,
+            longitude=LON,
+            radius_km=50,
+            detection_days=1,
+            cluster_km=3,
+            now=WNOW,
+            firms=OneFire(WNOW, bearing=bearing, distance_km=6.0),
+            weather=OpenMeteoClient(_http(transport), now=WNOW),
+            air_quality=None,
+            airnow=None,
+            openaq=None,
+            data_mode="test",
+            horizons=[0, 6],
+        )
+
+    def noted(report):
+        return [STABLE_AIR_NOTE in row.notes for row in report.horizons]
+
+    assert noted(run(270.0, "F")) == [False, True]  # +6 h is long enough for smoke to arrive
+    assert noted(run(270.0, "E")) == [False, True]
+    assert noted(run(270.0, "D")) == [False, False]  # neutral air: no warning
+    assert noted(run(90.0, "F")) == [False, False]  # the fire is upwind-opposite: no warning

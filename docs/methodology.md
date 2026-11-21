@@ -65,3 +65,7 @@ HTTP 429 and 5xx, and connection errors, are retried with exponential backoff, w
 - Applying 24-hour AQI breakpoints to one monitor hour is only a way to read the current concentration.
 
 Details of the later model and the MCP server are in `docs/roadmap.md`.
+
+### Stable-air note
+
+The plume holds the smoke at a fixed effective height (200 m). In stable air (Pasquill-Gifford class E or F, which the terrain step picks for clear, calm nights or an inversion) the vertical spread at a few kilometres is only tens of metres, so almost none of that smoke reaches the ground and `fire_pm25` can read 0.0 beside a large fire; real smoke often pools in valleys at night instead. The model does not change for this. A horizon's notes carry "stable night air keeps the smoke plume aloft; fire PM2.5 here may be underestimated, as smoke can pool in valleys at night" when a cluster passes the downwind and arrival checks, its class is E or F, and the same plume in class D (same mixing height and ridge blocking) would add at least 1 µg/m³ while the modelled value is under half of that. Without terrain data, in neutral air, or with no downwind fire in reach, the note is not added. `forecast_smoke` does not use the plume, so it has no such note.
