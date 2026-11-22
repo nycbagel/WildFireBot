@@ -241,9 +241,8 @@ def format_aqi(result: dict) -> str:
             line += f", target is downwind, smoke arrives in about {cluster['arrival_hours']} h"
         lines.append(line)
     lines.append("")
-    lines.append(
-        "+h    time (UTC)         AQI  category                        PM2.5 (base + fire)"
-    )
+    # the same widths as the rows below: an ISO time is 20 characters, the category 30
+    lines.append(f"{'+h':<6}{'time (UTC)':<22}{'AQI':>3}  {'category':<30}  PM2.5 (base + fire)")
     for row in result["horizons"]:
         lines.append(
             f"+{row['horizon_hours']:<3}  {row['time']}  {row['aqi']:>3}  {row['category']:<30}  "
